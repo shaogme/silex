@@ -7,9 +7,9 @@ weight = 10
 # 控制流与列表
 
 `silex::flow` 把 `silex_core` 的 `ReactiveSource` 输入连接到
-`silex_dom::view` 的动态 view 和 list kernel。组件自身只负责把 builder props
+`silex_view` 的动态 view 和 list kernel。组件自身只负责把 builder props
 转换成 owner-bound view；DOM range、row owner、失败回滚和 stale updater 仍由
-`silex_dom` 执行。使用这些组件前，先确认 source 与 view 属于兼容的
+`silex_view` 执行，物理 tree 操作由注入的 `silex_dom` backend 提供。使用这些组件前，先确认 source 与 view 属于兼容的
 `'scope`/runtime。
 
 本页的短代码块是 API 契约片段，依赖外层 `ctx`、owner 和 source，不是独立的

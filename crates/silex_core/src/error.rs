@@ -1,25 +1,9 @@
 use std::fmt;
 
-#[cfg(any(feature = "error-dom", feature = "error-bootstrap"))]
-use std::rc::Rc;
-
 use silex_reactivity::{
     CloseError, ErrorHandlerRef, ReactiveError, TransactionError, TransientScopeError,
 };
 use wasm_bindgen::JsValue;
-
-#[cfg(feature = "error-bootstrap")]
-mod bootstrap;
-#[cfg(feature = "error-bootstrap")]
-pub use bootstrap::{AppHostError, BootstrapError, HostState, UnmountOutcome};
-
-#[cfg(feature = "error-dom")]
-mod dom;
-#[cfg(feature = "error-dom")]
-pub use dom::{
-    CleanupFailure, CleanupFailureDiagnostic, CleanupOrigin, CleanupReport, CleanupSink,
-    DisposeError, DropFailureReport, MountAvailability, MountError, RollbackError,
-};
 
 #[cfg(feature = "error-i18n")]
 mod i18n;
@@ -86,14 +70,6 @@ pub enum SilexErrorKind {
     Net(NetError),
     #[cfg(feature = "error-intl")]
     Intl(IntlError),
-    #[cfg(feature = "error-dom")]
-    Mount(Rc<MountError>),
-    #[cfg(feature = "error-dom")]
-    Dispose(Rc<DisposeError>),
-    #[cfg(feature = "error-bootstrap")]
-    AppHost(Rc<AppHostError>),
-    #[cfg(feature = "error-bootstrap")]
-    Bootstrap(Rc<BootstrapError>),
 }
 
 impl SilexErrorKind {
@@ -120,14 +96,6 @@ impl SilexErrorKind {
             Self::Net(_) => "domain",
             #[cfg(feature = "error-intl")]
             Self::Intl(_) => "domain",
-            #[cfg(feature = "error-dom")]
-            Self::Mount(_) => "mount",
-            #[cfg(feature = "error-dom")]
-            Self::Dispose(_) => "dispose",
-            #[cfg(feature = "error-bootstrap")]
-            Self::AppHost(_) => "app-host",
-            #[cfg(feature = "error-bootstrap")]
-            Self::Bootstrap(_) => "bootstrap",
         }
     }
 }
@@ -155,14 +123,6 @@ impl fmt::Display for SilexErrorKind {
             Self::Net(error) => write!(f, "network error: {error}"),
             #[cfg(feature = "error-intl")]
             Self::Intl(error) => write!(f, "Intl error: {error}"),
-            #[cfg(feature = "error-dom")]
-            Self::Mount(error) => write!(f, "mount error: {error}"),
-            #[cfg(feature = "error-dom")]
-            Self::Dispose(error) => write!(f, "dispose error: {error}"),
-            #[cfg(feature = "error-bootstrap")]
-            Self::AppHost(error) => write!(f, "application host error: {error}"),
-            #[cfg(feature = "error-bootstrap")]
-            Self::Bootstrap(error) => write!(f, "bootstrap error: {error}"),
         }
     }
 }
@@ -187,14 +147,6 @@ impl std::error::Error for SilexErrorKind {
             Self::Net(error) => Some(error),
             #[cfg(feature = "error-intl")]
             Self::Intl(error) => Some(error),
-            #[cfg(feature = "error-dom")]
-            Self::Mount(error) => Some(&**error),
-            #[cfg(feature = "error-dom")]
-            Self::Dispose(error) => Some(&**error),
-            #[cfg(feature = "error-bootstrap")]
-            Self::AppHost(error) => Some(&**error),
-            #[cfg(feature = "error-bootstrap")]
-            Self::Bootstrap(error) => Some(&**error),
         }
     }
 }
@@ -222,14 +174,6 @@ impl PartialEq for SilexErrorKind {
             (Self::Net(left), Self::Net(right)) => left == right,
             #[cfg(feature = "error-intl")]
             (Self::Intl(left), Self::Intl(right)) => left == right,
-            #[cfg(feature = "error-dom")]
-            (Self::Mount(left), Self::Mount(right)) => Rc::ptr_eq(left, right),
-            #[cfg(feature = "error-dom")]
-            (Self::Dispose(left), Self::Dispose(right)) => Rc::ptr_eq(left, right),
-            #[cfg(feature = "error-bootstrap")]
-            (Self::AppHost(left), Self::AppHost(right)) => Rc::ptr_eq(left, right),
-            #[cfg(feature = "error-bootstrap")]
-            (Self::Bootstrap(left), Self::Bootstrap(right)) => Rc::ptr_eq(left, right),
             _ => false,
         }
     }
@@ -352,34 +296,6 @@ impl From<NetError> for SilexError {
 impl From<IntlError> for SilexError {
     fn from(error: IntlError) -> Self {
         error.into_silex_error()
-    }
-}
-
-#[cfg(feature = "error-dom")]
-impl From<MountError> for SilexError {
-    fn from(error: MountError) -> Self {
-        Self::Fatal(SilexErrorKind::Mount(Rc::new(error)))
-    }
-}
-
-#[cfg(feature = "error-dom")]
-impl From<DisposeError> for SilexError {
-    fn from(error: DisposeError) -> Self {
-        Self::Fatal(SilexErrorKind::Dispose(Rc::new(error)))
-    }
-}
-
-#[cfg(feature = "error-bootstrap")]
-impl From<AppHostError> for SilexError {
-    fn from(error: AppHostError) -> Self {
-        Self::Fatal(SilexErrorKind::AppHost(Rc::new(error)))
-    }
-}
-
-#[cfg(feature = "error-bootstrap")]
-impl From<BootstrapError> for SilexError {
-    fn from(error: BootstrapError) -> Self {
-        Self::Fatal(SilexErrorKind::Bootstrap(Rc::new(error)))
     }
 }
 

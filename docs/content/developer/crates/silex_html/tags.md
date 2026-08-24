@@ -16,7 +16,7 @@ weight = 20
 生成器把标签分为 `non_void` 和 `void`：
 
 ```rust
-use silex_dom::attribute::AttributeBuilder;
+use silex_view::attribute::AttributeBuilder;
 use silex_html::{button, div, input, path, svg};
 
 let html = div!(button!("Save"), input());
@@ -61,15 +61,15 @@ SVG 的函数名遵循生成器的 Rust snake case 转换，例如 `linearGradie
 ## marker 与 DOM 类型
 
 每个生成标签都有一个公开 marker，例如 `Div`、`Input`、`Svg`。marker
-实现 `silex_dom::element::tags::Tag`，其 `DomElement` 由生成器选择：
+实现 `silex_view::element::Tag`，其 `DomElement` 由注入的 backend 创建：
 
 | 标签类别 | 当前 `DomElement` |
 | --- | --- |
-| 普通 HTML 标签 | `web_sys::HtmlElement` |
-| `input`、`textarea`、`select`、`button` | 对应的 HTML 控件类型 |
-| `option`、`optgroup`、`form`、`a` | 对应的 HTML 类型 |
-| `img`、`canvas`、`audio`、`video`、`dialog`、`details`、`iframe` | 对应的 HTML 类型 |
-| SVG 标签 | `web_sys::SvgElement`；SVG `a` 使用 `web_sys::SvgaElement` |
+| 普通 HTML 标签 | `silex_dom::DomElement`，由 browser/SSR backend 创建 |
+| `input`、`textarea`、`select`、`button` | View marker 提供属性能力 |
+| `option`、`optgroup`、`form`、`a` | View marker 提供属性能力 |
+| `img`、`canvas`、`audio`、`video`、`dialog`、`details`、`iframe` | View marker 提供属性能力 |
+| SVG 标签 | `DomElement` + SVG namespace metadata |
 
 生成标签还会实现 `TextTag`、`FormTag`、`AnchorTag`、`MediaTag`、`OpenTag`、
 `TableCellTag`、`TableHeaderTag` 或 `SvgTag`。其中七个 HTML 语义 marker 会

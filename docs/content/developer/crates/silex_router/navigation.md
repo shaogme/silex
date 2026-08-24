@@ -89,8 +89,8 @@ required chain prop；`base` 默认 `/`，`layout` 默认不包裹 outlet。挂�
 ## `RouteOutlet` 与 nested outlet
 
 outlet 是一个 `View`，而不是一次性渲染函数。它订阅 `RouterContext::path`，
-对每个稳定 branch 使用 `mount_branch_stable_cached`：同一 branch key 保留
-branch owner，key 变化时关闭旧 branch 并挂载新 view。nested table 的 outlet
+对每个稳定 branch 使用 `StableBranch`：同一 branch key 保留 branch owner，
+key 变化时关闭旧 branch 并挂载新 view。nested table 的 outlet
 先剥离静态 prefix，再把相对 path 交给 child table。
 
 这解释了两个常见行为：

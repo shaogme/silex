@@ -1,7 +1,7 @@
 use silex_core::prelude::*;
-use silex_dom::prelude::*;
 use silex_html::{DataAttributes, FormAttributes, button, div, input, span};
 use silex_macros::{component, tw};
+use silex_view::prelude::*;
 
 #[component]
 pub fn RadioGroup<'scope, Ctx>(

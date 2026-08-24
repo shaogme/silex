@@ -1,25 +1,23 @@
 use silex_core::prelude::*;
-use silex_dom::prelude::*;
 use silex_html::{FormAttributes, div, input};
 use silex_macros::{component, tw};
+use silex_view::prelude::*;
 use std::cell::Cell;
 use std::rc::Rc;
-use wasm_bindgen::JsCast;
 
 fn calculate_slider_value(
-    e: &web_sys::PointerEvent,
-    track_el: &web_sys::Element,
+    event: PointerEventData,
+    rect: DomRectData,
     is_vertical: bool,
     min: f64,
     max: f64,
     step: f64,
 ) -> f64 {
-    let rect = track_el.get_bounding_client_rect();
     let pct = if is_vertical {
         let height = rect.height();
         if height > 0.0 {
-            let client_y = e.client_y() as f64;
-            let bottom = rect.bottom();
+            let client_y = event.client_y();
+            let bottom = rect.top() + rect.height();
             ((bottom - client_y) / height).clamp(0.0, 1.0)
         } else {
             0.0
@@ -27,7 +25,7 @@ fn calculate_slider_value(
     } else {
         let width = rect.width();
         if width > 0.0 {
-            let client_x = e.client_x() as f64;
+            let client_x = event.client_x();
             let left = rect.left();
             ((client_x - left) / width).clamp(0.0, 1.0)
         } else {
@@ -145,19 +143,15 @@ pub fn Slider<'scope, Ctx>(
 
     let handle_down = {
         let is_dragging = is_dragging.clone();
-        move |e: web_sys::PointerEvent| -> SilexResult<()> {
+        move |e: DomEvent| -> SilexResult<()> {
             if disabled.get()? {
                 return Ok(());
             }
-            if let Some(target) = e.current_target()
-                && let Ok(el) = target.dyn_into::<web_sys::Element>()
-            {
-                el.set_pointer_capture(e.pointer_id())
-                    .map_err(SilexError::fatal)?;
+            if let (Some(pointer), Some(rect)) = (e.pointer_data(), e.rect()) {
                 is_dragging.set(true);
                 let new_val = calculate_slider_value(
-                    &e,
-                    &el,
+                    pointer,
+                    rect,
                     is_vertical.get()?,
                     min_val.get()?,
                     max_val.get()?,
@@ -171,14 +165,13 @@ pub fn Slider<'scope, Ctx>(
 
     let handle_move = {
         let is_dragging = is_dragging.clone();
-        move |e: web_sys::PointerEvent| -> SilexResult<()> {
+        move |e: DomEvent| -> SilexResult<()> {
             if is_dragging.get()
-                && let Some(target) = e.current_target()
-                && let Ok(el) = target.dyn_into::<web_sys::Element>()
+                && let (Some(pointer), Some(rect)) = (e.pointer_data(), e.rect())
             {
                 let new_val = calculate_slider_value(
-                    &e,
-                    &el,
+                    pointer,
+                    rect,
                     is_vertical.get()?,
                     min_val.get()?,
                     max_val.get()?,
@@ -192,22 +185,18 @@ pub fn Slider<'scope, Ctx>(
 
     let handle_up = {
         let is_dragging = is_dragging.clone();
-        move |e: web_sys::PointerEvent| -> SilexResult<()> {
+        move |_e: DomEvent| -> SilexResult<()> {
             if is_dragging.get() {
                 is_dragging.set(false);
-                if let Some(target) = e.current_target()
-                    && let Ok(el) = target.dyn_into::<web_sys::Element>()
-                {
-                    el.release_pointer_capture(e.pointer_id())
-                        .map_err(SilexError::fatal)?;
-                }
             }
             Ok(())
         }
     };
 
-    let handle_input = move |v: String| -> SilexResult<()> {
-        if let Ok(num) = v.parse::<f64>() {
+    let handle_input = move |event: DomEvent| -> SilexResult<()> {
+        if let Some(value) = event.input_value()
+            && let Ok(num) = value.parse::<f64>()
+        {
             on_change.invoke(num)?;
         }
         Ok(())
@@ -223,7 +212,16 @@ pub fn Slider<'scope, Ctx>(
             .step(step_val)
             .disabled(disabled)
             .class(tw!("sr-only absolute opacity-0 pointer-events-none"))
-            .on_input(handle_input)
+            .on_input({
+                move |event: DomEvent| -> SilexResult<()> {
+                    if let Some(value) = event.input_value()
+                        && let Ok(num) = value.parse::<f64>()
+                    {
+                        on_change.invoke(num)?;
+                    }
+                    Ok(())
+                }
+            })
             .on_change(handle_input),
         // Visual Track
         div(chain!(

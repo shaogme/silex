@@ -1,9 +1,9 @@
 use std::error::Error;
 
-use silex_dom::attribute::{AriaAttributes, AttributeBuilder, GlobalAttributes};
 use silex_html::{
     AnchorAttributes, FormAttributes, MediaAttributes, a, button, div, g, img, input, path, svg,
 };
+use silex_view::attribute::{AriaAttributes, AttributeBuilder, GlobalAttributes};
 
 pub fn run() -> Result<(), Box<dyn Error>> {
     let form_view = div!(

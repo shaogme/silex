@@ -1,12 +1,12 @@
 #![deny(warnings)]
 
 use silex_core::Runtime;
-use silex_dom::attribute::AttributeBuilder;
 use silex_html::{
     AnchorAttributes, DataAttributes, FormAttributes, LabelAttributes, MediaAttributes,
     OpenAttributes, TableCellAttributes, TableHeaderAttributes, a, dialog, div, img, input, label,
     td, th,
 };
+use silex_view::attribute::AttributeBuilder;
 
 #[test]
 fn supported_tags_keep_their_typed_facades() {

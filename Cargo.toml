@@ -6,6 +6,7 @@ members = [
     "crates/silex_html",
     "crates/silex_css",
     "crates/silex_dom",
+    "crates/silex_view",
     "crates/silex_bootstrap",
     "crates/silex_rx",
     "crates/silex_reactivity",
@@ -62,6 +63,7 @@ categories = ["web-programming", "wasm", "gui"]
 silex = { path = "crates/silex", version = "0.1.0-beta.9" }
 silex_core = { path = "crates/silex_core", version = "0.1.0-beta.9" }
 silex_dom = { path = "crates/silex_dom", version = "0.1.0-beta.9" }
+silex_view = { path = "crates/silex_view", version = "0.1.0-beta.9", default-features = false }
 silex_bootstrap = {
     path = "crates/silex_bootstrap",
     version = "0.1.0-beta.9",

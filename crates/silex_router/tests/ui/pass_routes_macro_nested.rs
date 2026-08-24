@@ -1,4 +1,5 @@
-use silex_router::{PathTail, dom::view::AnyView, macros::router};
+use silex_router::{PathTail, macros::router};
+use silex_view::AnyView;
 
 router! {
     enum UsersRoute {

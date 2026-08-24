@@ -4,8 +4,7 @@ include!("../../src/lib.rs");
 
 use silex_core::reactivity::Rx;
 use silex_css::types::Hex;
-use silex_dom::attribute::{AttributeBuilder, GlobalAttributes};
-use silex_dom::prelude::AnyView;
+use silex_view::AnyView;
 use silex_macros::styled;
 
 styled! {

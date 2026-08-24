@@ -5,7 +5,8 @@ use silex_bootstrap::{
     PageLifecyclePolicy, UnmountOutcome,
 };
 use silex_core::{Runtime, SilexError, SilexResult};
-use silex_dom::{CleanupSink, MountContext, element::Element};
+use silex_dom::CleanupSink;
+use silex_view::{Element, MountBuilderContext};
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
@@ -46,9 +47,9 @@ fn clean_sink() -> CleanupSink {
     CleanupSink::new(|report| assert!(report.is_clean()))
 }
 
-fn mount_text<'scope>(ctx: &MountContext<'scope>, text: &'static str) -> SilexResult<()> {
+fn mount_text<'scope>(ctx: &MountBuilderContext<'scope>, text: &'static str) -> SilexResult<()> {
     let handler = ctx.access().error_handler(|_: SilexError| {})?;
-    ctx.mount(Element::with_child("section", text), handler)
+    ctx.mount_unit(Element::with_child("section", text), handler)
 }
 
 fn dispatch(event_name: &str) {
@@ -66,7 +67,8 @@ fn reporter(calls: Rc<Cell<u32>>) -> LifecycleReporter {
 #[wasm_bindgen_test]
 fn manual_policy_does_not_install_a_listener() {
     let target = target();
-    let mut controller = PageController::new(target.clone(), clean_sink());
+    let mut controller =
+        PageController::from_web_sys(target.clone(), clean_sink()).expect("browser controller");
     controller
         .mount(Runtime::new(), |ctx| mount_text(ctx, "manual"))
         .expect("mount should succeed");
@@ -90,7 +92,8 @@ fn manual_policy_does_not_install_a_listener() {
 #[wasm_bindgen_test]
 fn pagehide_unmounts_once_and_repeated_events_are_idempotent() {
     let target = target();
-    let mut controller = PageController::new(target.clone(), clean_sink());
+    let mut controller =
+        PageController::from_web_sys(target.clone(), clean_sink()).expect("browser controller");
     controller
         .mount(Runtime::new(), |ctx| mount_text(ctx, "page"))
         .expect("mount should succeed");
@@ -122,7 +125,8 @@ fn pagehide_unmounts_once_and_repeated_events_are_idempotent() {
 #[wasm_bindgen_test]
 fn removing_page_lifecycle_keeps_the_application_mounted() {
     let target = target();
-    let mut controller = PageController::new(target.clone(), clean_sink());
+    let mut controller =
+        PageController::from_web_sys(target.clone(), clean_sink()).expect("browser controller");
     controller
         .mount(Runtime::new(), |ctx| mount_text(ctx, "kept"))
         .expect("mount should succeed");
@@ -149,7 +153,8 @@ fn removing_page_lifecycle_keeps_the_application_mounted() {
 #[wasm_bindgen_test]
 fn visibility_policy_ignores_events_while_document_is_visible() {
     let target = target();
-    let mut controller = PageController::new(target.clone(), clean_sink());
+    let mut controller =
+        PageController::from_web_sys(target.clone(), clean_sink()).expect("browser controller");
     controller
         .mount(Runtime::new(), |ctx| mount_text(ctx, "visible"))
         .expect("mount should succeed");
@@ -185,7 +190,8 @@ fn dropping_controller_removes_listener_before_host_cleanup() {
     let reporter = reporter(calls.clone());
 
     {
-        let mut controller = PageController::new(target.clone(), clean_sink());
+        let mut controller =
+            PageController::from_web_sys(target.clone(), clean_sink()).expect("browser controller");
         controller
             .mount(Runtime::new(), |ctx| mount_text(ctx, "drop"))
             .expect("mount should succeed");
@@ -204,7 +210,8 @@ fn dropping_controller_removes_listener_before_host_cleanup() {
 #[wasm_bindgen_test]
 fn lifecycle_reentrancy_is_reported_without_blocking_outer_unmount() {
     let target = target();
-    let mut controller = PageController::new(target.clone(), clean_sink());
+    let mut controller =
+        PageController::from_web_sys(target.clone(), clean_sink()).expect("browser controller");
     controller
         .mount(Runtime::new(), |ctx| {
             let owner = ctx.access();
@@ -216,7 +223,7 @@ fn lifecycle_reentrancy_is_reported_without_blocking_outer_unmount() {
                 },
                 &handler,
             )?;
-            ctx.mount(Element::with_child("section", "reentrant"), handler)
+            ctx.mount_unit(Element::with_child("section", "reentrant"), handler)
         })
         .expect("mount should succeed");
     let errors = Rc::new(RefCell::new(None));
@@ -248,7 +255,8 @@ fn lifecycle_reentrancy_is_reported_without_blocking_outer_unmount() {
 #[ignore = "wasm32-unknown-unknown uses panic=abort; run in an unwind test target"]
 fn lifecycle_reporter_receives_cleanup_error() {
     let target = target();
-    let mut controller = PageController::new(target.clone(), clean_sink());
+    let mut controller =
+        PageController::from_web_sys(target.clone(), clean_sink()).expect("browser controller");
     controller
         .mount(Runtime::new(), |ctx| {
             let owner = ctx.access();
@@ -257,7 +265,7 @@ fn lifecycle_reporter_receives_cleanup_error() {
                 || -> SilexResult<()> { panic!("page cleanup failure") },
                 &handler,
             )?;
-            ctx.mount(Element::with_child("section", "cleanup-error"), handler)
+            ctx.mount_unit(Element::with_child("section", "cleanup-error"), handler)
         })
         .expect("mount should succeed");
     let errors = Rc::new(RefCell::new(None));

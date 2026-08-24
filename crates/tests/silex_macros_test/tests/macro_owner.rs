@@ -7,10 +7,11 @@ use silex::core::{
     ErrorHandlerToken, ErrorReporter, OwnerAccess, Runtime, Rx, SilexContext, SilexResult,
 };
 use silex::css::types::{Hex, hex, px};
-use silex::dom::attribute::{AttributeBuilder, GlobalAttributes};
-use silex::dom::prelude::AnyView;
-use silex::dom::view::{MountContext, MountInstance, MountOwner, MountOwnerToken, View};
 use silex::macros::{classes, css, global, styled, tw};
+use silex_dom::browser::BrowserDom;
+use silex_view::AnyView;
+use silex_view::attribute::{AttributeBuilder, GlobalAttributes};
+use silex_view::{MountContext, MountInstance, MountOwnerToken, View};
 use wasm_bindgen::JsValue;
 use wasm_bindgen_futures::JsFuture;
 use wasm_bindgen_test::*;
@@ -38,8 +39,17 @@ where
     V: View<'owner>,
     P: Clone + Into<web_sys::Node>,
 {
-    let context = MountContext::for_parent(parent.clone().into(), owner.clone(), error_handler);
-    let instance = view.mount(&context)?;
+    let browser = BrowserDom::from_window().map_err(|error| {
+        silex::core::SilexError::fatal(silex::core::SilexErrorKind::Dom(error.to_string()))
+    })?;
+    let dom = browser.context();
+    let parent = browser
+        .from_web_sys_node(parent.clone().into())
+        .map_err(|error| {
+            silex::core::SilexError::fatal(silex::core::SilexErrorKind::Dom(error.to_string()))
+        })?;
+    let context = MountContext::for_parent(dom, parent, owner.clone(), error_handler);
+    let instance = context.mount(view)?;
     match context.transaction().commit() {
         Ok(()) => Ok(instance),
         Err(error) => {
@@ -732,15 +742,11 @@ fn styled_static_descriptor_rejects_foreign_inputs_without_outer_mount_aggregati
         )],
         vec![getter],
     )
-    .into_op();
+    .into_view_op();
     let (owner, error_handler) = test_owner(local_scope);
 
-    let context =
-        MountContext::for_parent(host.clone().into(), owner.token(), error_handler.view());
-    operation
-        .apply(&host, &context)
-        .expect("styled operation should register");
-    assert!(context.transaction().commit().is_err());
+    let view = silex::html::div(()).apply(operation);
+    assert!(mount_view(&view, &owner, &host, error_handler.view()).is_err());
     assert!(!document_style_contains("macro-standalone-styled-static"));
 
     drop(error_handler);

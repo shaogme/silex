@@ -7,7 +7,7 @@ weight = 30
 # 属性 facade 与 DOM 目标
 
 `silex_html::attributes` 只提供面向 HTML 的命名方法。它们通过
-`silex_dom::attribute::AttributeBuilder::attr` 创建 `AttrOp`，在标签真正
+`silex_view::attribute::AttributeBuilder::attr` 创建 `AttrOp`，在标签真正
 mount 时才应用到 DOM。属性的生命周期、响应式 effect、事件资源和清理由
 `silex_dom` 的 owner 管理。
 
@@ -59,7 +59,7 @@ fn method(self, value: impl IntoStorable<'scope>) -> Self
 命名 facade 统一使用 attribute 目标：
 
 ```rust
-use silex_dom::attribute::{AttributeBuilder, GlobalAttributes};
+use silex_view::attribute::{AttributeBuilder, GlobalAttributes};
 use silex_html::{FormAttributes, input};
 
 let field = input()
@@ -112,10 +112,10 @@ class/style 的合并也由 `silex_dom` 完成：动态 cleanup 只撤销当前 
 ## 全局属性、ARIA 和事件
 
 以下能力不是 `silex_html::attributes.rs` 声明的，而是从
-`silex_dom::attribute` 导入：
+`silex_view::attribute` 导入：
 
 ```rust
-use silex_dom::attribute::{
+use silex_view::attribute::{
     AriaAttributes,
     AttributeBuilder,
     GlobalAttributes,
@@ -150,4 +150,4 @@ owner，owner 关闭后不会继续调用应用 callback。跨元素复用多组
 
 这些 marker 只表达粗粒度能力分类，不是完整 WHATWG 内容模型数据库，也不
 验证 attribute 值枚举或自动选择 attribute/property。全局属性、ARIA、事件
-和 `bind_value` 仍由 `silex_dom` 的通用 blanket impl 提供。
+和 `bind_value` 由 `silex_view` 的通用 blanket impl 提供。

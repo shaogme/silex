@@ -6,6 +6,7 @@ publish = false
 
 [dependencies]
 silex = { workspace = true, features = ["bootstrap"] }
+silex_view.workspace = true
 gloo-timers.workspace = true
 wasm-bindgen.workspace = true
 

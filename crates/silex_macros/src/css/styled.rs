@@ -1,3 +1,4 @@
+use crate::crate_path::silex_view;
 use crate::css::compiler::{CssCompileResult, CssCompiler, DynamicRule};
 use crate::css::html_tag::HtmlTagSpec;
 use proc_macro2::{Span, TokenStream};
@@ -168,6 +169,7 @@ impl Parse for StyledComponent {
 
 pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
     let __silex = crate::crate_path::silex();
+    let __view = silex_view();
     let parsed: StyledComponent = syn::parse2(input)?;
     let tag = &parsed.tag;
     let tag_spec = HtmlTagSpec::from_tag(tag)?;
@@ -405,7 +407,7 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
     let attrs_binding = attrs_binding.unwrap_or_else(|| {
         let ident = quote::format_ident!("attrs");
         all_fn_args.push(syn::parse_quote! {
-            #[attrs] #ident: #__silex::dom::attribute::AttributeGroup<#scope>
+            #[attrs] #ident: #__view::attribute::AttributeGroup<#scope>
         });
         ident
     });
@@ -479,7 +481,7 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
                 ::std::vec![ #(#style_getters.clone()),* ],
             )
             .with_static_templates(::std::vec![ #(#deferred_style_templates),* ])
-            .into_op())
+            .into_view_op())
         }
     };
 
@@ -490,16 +492,19 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
     };
 
     let node_view = quote! {
-        #node_init
-            .class(#class_name)
-            #style_prop_binding
-            .apply(#__silex::dom::attribute::AttrOp::CombinedStyles(#__silex::dom::attribute::CombinedStyles {
-                statics: ::std::vec![],
-                properties: ::std::vec![ #(#style_bindings),* ],
-                sheets: ::std::vec![],
-            }))
-            #styled_variant_binding
-            .apply(#attrs_binding)
+        {
+            use #__view::attribute::{AttributeBuilder as _, GlobalAttributes as _};
+            #node_init
+                .class(#class_name)
+                #style_prop_binding
+                .apply(#__view::attribute::AttrOp::CombinedStyles(#__view::attribute::CombinedStyles {
+                    statics: ::std::vec![],
+                    properties: ::std::vec![ #(#style_bindings),* ],
+                    sheets: ::std::vec![],
+                }))
+                #styled_variant_binding
+                .apply(#attrs_binding)
+        }
     };
 
     let node_return = if needs_result {
@@ -582,6 +587,7 @@ fn process_dynamic_entries(input: DynamicEntryExpansion<'_>) -> Result<()> {
         error_handler,
     } = input;
     let __silex = crate::crate_path::silex();
+    let __view = silex_view();
     for (i, (prop, expr)) in entries.iter().enumerate() {
         let var_ident = quote::format_ident!("dyn_var{}_{}", suffix, i);
         let prop_type = crate::css::get_prop_type(prop, span)?;
@@ -594,7 +600,7 @@ fn process_dynamic_entries(input: DynamicEntryExpansion<'_>) -> Result<()> {
         style_getters.push(var_ident.clone());
         let var_name = format!("--{}-{}", class_name, i);
         style_bindings.push(quote! {
-            #__silex::dom::attribute::ReactiveBindingPlan::style_property(
+            #__view::attribute::ReactiveBindingPlan::style_property(
                 ::std::borrow::Cow::Borrowed(#var_name),
                 #var_ident,
             )
@@ -829,13 +835,14 @@ fn get_tag_return_type(
     scope: &syn::Lifetime,
 ) -> TokenStream {
     let __silex = crate::crate_path::silex();
+    let __view = silex_view();
     if let Some(spec) = tag_spec {
         let marker = &spec.marker;
-        quote! { #__silex::dom::element::TypedElement<#scope, #__silex::html::#marker> }
+        quote! { #__view::element::TypedElement<#scope, #__silex::html::#marker> }
     } else {
         quote! {
-            impl #__silex::dom::attribute::AttributeBuilder<#scope>
-                + #__silex::dom::view::View<#scope>
+            impl #__view::attribute::AttributeBuilder<#scope>
+                + #__view::View<#scope>
                 + #scope
                 #where_clause
         }
@@ -900,6 +907,7 @@ impl Parse for GlobalStyle {
 
 pub fn global_impl(input: TokenStream) -> Result<TokenStream> {
     let __silex = crate::crate_path::silex();
+    let __view = silex_view();
     let parsed: GlobalStyle = syn::parse2(input)?;
 
     let GlobalStyle {
@@ -1068,7 +1076,7 @@ pub fn global_impl(input: TokenStream) -> Result<TokenStream> {
         #[allow(non_snake_case, unused_variables)]
         #vis fn #c_name #fn_generics(
             #params
-        ) -> #__silex::core::SilexResult<impl #__silex::dom::view::View<#scope> + #scope>
+        ) -> #__silex::core::SilexResult<impl #__view::View<#scope> + #scope>
             #where_clause
         {
             #assertions
@@ -1147,6 +1155,7 @@ fn generate_static_global(input: StaticGlobalExpansion<'_>) -> Result<TokenStrea
         scope,
         result: res,
     } = input;
+    let __view = silex_view();
     let assertions = crate::css::generate_static_assertions(&res.assertions)?;
     let static_values_ident = quote::format_ident!("__slx_global_static_values");
     let (static_value_decls, static_value_ids) = crate::css::generate_static_value_bindings(
@@ -1168,7 +1177,7 @@ fn generate_static_global(input: StaticGlobalExpansion<'_>) -> Result<TokenStrea
         #[allow(non_snake_case, unused_variables)]
         #vis fn #name #fn_generics(
             #params
-        ) -> impl #__silex::dom::view::View<#scope> + #scope
+        ) -> impl #__view::View<#scope> + #scope
             #where_clause
         {
             #assertions
@@ -1176,8 +1185,8 @@ fn generate_static_global(input: StaticGlobalExpansion<'_>) -> Result<TokenStrea
             let #static_values_ident: ::std::vec::Vec<::std::string::String> =
                 #static_value_tokens;
             #static_inits
-            use #__silex::dom::view::View;
-            #__silex::dom::view::View::into_any(())
+            use #__view::View;
+            #__view::View::into_any(())
         }
     })
 }

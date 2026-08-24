@@ -1,6 +1,6 @@
-use silex_router::dom::view::AnyView;
 use silex_router::macros::router;
 use silex_router::RouterContext;
+use silex_view::AnyView;
 
 router! {
     enum AppRoute {

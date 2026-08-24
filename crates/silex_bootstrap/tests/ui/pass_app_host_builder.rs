@@ -1,6 +1,6 @@
 use silex_bootstrap::AppHost;
 use silex_core::{Runtime, SilexResult};
-use silex_dom::MountContext;
+use silex_view::MountBuilderContext;
 
 #[allow(dead_code)]
 fn call_mount<F>(
@@ -9,7 +9,7 @@ fn call_mount<F>(
     builder: F,
 ) -> Result<(), silex_bootstrap::AppHostError>
 where
-    F: for<'scope> FnOnce(&MountContext<'scope>) -> SilexResult<()>,
+    F: for<'scope> FnOnce(&MountBuilderContext<'scope>) -> SilexResult<()>,
 {
     host.mount(runtime, builder)
 }

@@ -1,9 +1,12 @@
 use crate::{AppHost, AppHostError, BootstrapError, HostState, UnmountOutcome};
 use silex_core::{Runtime, SilexError, SilexErrorKind, SilexResult};
 use silex_dom::{
-    CleanupSink, MountContext,
-    helpers::{self, detached::WindowListenerHandle},
+    CleanupSink, DomContext, DomNode,
+    browser::BrowserDom,
+    event::{DomEventBridge, EventKind, EventSpec, WindowEventRequest},
+    host::HostResource,
 };
+use silex_view::MountBuilderContext;
 use std::{
     cell::RefCell,
     rc::{Rc, Weak},
@@ -26,23 +29,41 @@ pub type LifecycleReporter = Rc<dyn Fn(BootstrapError) + 'static>;
 
 /// Owns an [`AppHost`] and optionally connects it to browser page lifecycle events.
 pub struct PageController {
-    lifecycle_listeners: Vec<WindowListenerHandle>,
+    dom: DomContext,
+    lifecycle_listeners: Vec<HostResource<'static>>,
     host: Option<Rc<RefCell<AppHost>>>,
 }
 
 impl PageController {
+    /// Construct a controller through the explicit browser adapter.
+    pub fn from_web_sys(target: Node, cleanup_sink: CleanupSink) -> Result<Self, SilexError> {
+        let document = web_sys::window()
+            .and_then(|window| window.document())
+            .ok_or_else(|| SilexError::fatal(SilexErrorKind::Dom("Document not found".into())))?;
+        let browser = BrowserDom::new(document);
+        let target = browser
+            .from_web_sys_node(target)
+            .map_err(|error| SilexError::fatal(SilexErrorKind::Dom(error.to_string())))?;
+        Ok(Self::new(browser.context(), target, cleanup_sink))
+    }
+
     /// Create a controller with an application-owned cleanup diagnostic sink.
-    pub fn new(target: Node, cleanup_sink: CleanupSink) -> Self {
+    pub fn new(dom: DomContext, target: DomNode, cleanup_sink: CleanupSink) -> Self {
         Self {
             lifecycle_listeners: Vec::new(),
-            host: Some(Rc::new(RefCell::new(AppHost::new(target, cleanup_sink)))),
+            dom: dom.clone(),
+            host: Some(Rc::new(RefCell::new(AppHost::new(
+                dom,
+                target,
+                cleanup_sink,
+            )))),
         }
     }
 
     /// Mount one application through the underlying [`AppHost`].
     pub fn mount<F>(&mut self, runtime: Runtime, builder: F) -> Result<(), BootstrapError>
     where
-        F: for<'scope> FnOnce(&MountContext<'scope>) -> SilexResult<()>,
+        F: for<'scope> FnOnce(&MountBuilderContext<'scope>) -> SilexResult<()>,
     {
         let mut host = self
             .host
@@ -56,7 +77,7 @@ impl PageController {
     /// Dispose the current application and mount a replacement through the underlying host.
     pub fn replace<F>(&mut self, runtime: Runtime, builder: F) -> Result<(), BootstrapError>
     where
-        F: for<'scope> FnOnce(&MountContext<'scope>) -> SilexResult<()>,
+        F: for<'scope> FnOnce(&MountBuilderContext<'scope>) -> SilexResult<()>,
     {
         let mut host = self
             .host
@@ -93,41 +114,31 @@ impl PageController {
                 &["pagehide", "visibilitychange"][..]
             }
         };
-        if helpers::try_window().is_none() {
-            return Err(BootstrapError::Listener(SilexError::fatal(
-                SilexErrorKind::Dom("Window not found".to_string()),
-            )));
-        }
-
-        let document = match policy {
-            PageLifecyclePolicy::PageHideAndVisibilityChange => {
-                Some(helpers::try_document().ok_or_else(|| {
-                    BootstrapError::Listener(SilexError::fatal(SilexErrorKind::Dom(
-                        "Document not found".to_string(),
-                    )))
-                })?)
-            }
-            PageLifecyclePolicy::Manual | PageLifecyclePolicy::PageHide => None,
-        };
-        let only_when_hidden = document.is_some();
+        let only_when_hidden = matches!(policy, PageLifecyclePolicy::PageHideAndVisibilityChange);
         let host = Rc::downgrade(self.host.as_ref().expect("page controller host is present"));
         let mut listeners = Vec::with_capacity(events.len());
 
         for &event_name in events {
             let host = host.clone();
             let reporter = reporter.clone();
-            let document = document.clone();
-            let listener =
-                helpers::detached::try_window_event_listener_untyped(event_name, move |_event| {
-                    if only_when_hidden
-                        && document.as_ref().is_some_and(|document| !document.hidden())
-                    {
-                        return;
-                    }
-                    dispatch_lifecycle_unmount(&host, &reporter);
-                })
+            let dom = self.dom.clone();
+            let bridge: Rc<dyn DomEventBridge> = Rc::new(move |_event| {
+                if only_when_hidden && !dom.document_hidden().ok().flatten().unwrap_or(true) {
+                    return Ok(());
+                }
+                dispatch_lifecycle_unmount(&host, &reporter);
+                Ok(())
+            });
+            let listener = self
+                .dom
+                .listen_window(
+                    WindowEventRequest::new(EventSpec::new(event_name, EventKind::Custom))
+                        .with_bridge(bridge),
+                )
                 .map_err(|error| {
-                    BootstrapError::Listener(SilexError::fatal(SilexErrorKind::from(error)))
+                    BootstrapError::Listener(SilexError::fatal(SilexErrorKind::Dom(
+                        error.to_string(),
+                    )))
                 })?;
             listeners.push(listener);
         }
@@ -165,7 +176,7 @@ impl PageController {
     }
 
     /// Return the caller-provided target node.
-    pub fn target(&self) -> Node {
+    pub fn target(&self) -> DomNode {
         self.host
             .as_ref()
             .expect("page controller host is present")

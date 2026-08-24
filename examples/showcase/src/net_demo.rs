@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use silex::prelude::*;
+use silex::view::{BranchEvaluation, StableBranch};
 
 use crate::css::AppTheme;
 
@@ -30,6 +31,31 @@ pub struct WikimediaChange {
 pub struct CreatePostInput {
     pub title: String,
     pub body: String,
+}
+
+struct NetworkTabView<'scope> {
+    active_tab: ReadSignal<'scope, &'static str>,
+}
+
+impl<'scope> View<'scope> for NetworkTabView<'scope> {
+    fn mount(&self, context: &MountContext<'scope>) -> SilexResult<MountInstance<'scope>> {
+        let active_tab = self.active_tab;
+        let branch = StableBranch::new(
+            move || Ok(BranchEvaluation::new(active_tab.get()?, ())),
+            move |evaluation, branch_context| {
+                let (tab, ()) = evaluation.into_parts();
+                let tab_ctx =
+                    SilexContext::new(branch_context.owner(), branch_context.error_handler());
+                match tab {
+                    "http" => HttpClientDemo(tab_ctx).build().into_any(),
+                    "ws" => WebSocketDemo(tab_ctx).build().into_any(),
+                    "sse" => EventStreamDemo(tab_ctx).build().into_any(),
+                    _ => AnyView::Empty,
+                }
+            },
+        );
+        context.mount(&branch)
+    }
 }
 
 #[component]
@@ -87,8 +113,8 @@ pub fn HttpClientDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
             input()
                 .attr("type", "number")
                 .prop("value", post_id)
-                .on(event::input, move |e| {
-                    if let Ok(id) = event_target_value(&e).parse::<i32>() {
+                .on(event::input, move |e: DomEvent| {
+                    if let Ok(id) = e.input_value().unwrap_or_default().parse::<i32>() {
                         post_id.set(id)?;
                     }
                     Ok(())
@@ -346,15 +372,12 @@ pub fn WebSocketDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> + 'scope
                     input()
                         .placeholder("Send message (Press Enter)...")
                         .bind_value(input_text)
-                        .on(
-                            event::keydown,
-                            move |e: silex::reexports::web_sys::KeyboardEvent| {
-                                if e.key() == "Enter" {
-                                    send_message()?;
-                                }
-                                Ok(())
+                        .on(event::keydown, move |e: DomEvent| {
+                            if e.key().as_deref() == Some("Enter") {
+                                send_message()?;
                             }
-                        )
+                            Ok(())
+                        })
                         .style(
                             sty(ctx)
                                 .padding("8px")?
@@ -529,12 +552,8 @@ pub fn NetDemoPage<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
 
         // Content
         div![
-            move || { Ok(match active_tab.get()? {
-                "http" => HttpClientDemo(ctx).build().into_any(),
-                "ws" => WebSocketDemo(ctx).build().into_any(),
-                "sse" => EventStreamDemo(ctx).build().into_any(),
-                _ => "".into_any(),
-            })
+            NetworkTabView {
+                active_tab: active_tab.read_signal(),
             }
         ].class("demo-container")
     ]

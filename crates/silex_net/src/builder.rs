@@ -750,12 +750,14 @@ impl<'scope, T, C, H> HttpClientBuilder<'scope, T, C, H> {
 mod tests {
     use super::{HttpClient, IntoNetValue, ValueResolver};
     use crate::state::RequestBody;
-    use silex_core::{ErrorHandlerToken, OwnerAccess, Runtime, RxGet};
+    use silex_core::{ErrorHandlerToken, OwnerAccess, Runtime};
 
     #[cfg(feature = "json")]
     use crate::NetError;
     #[cfg(feature = "json")]
     use crate::NetErrorKind;
+    #[cfg(feature = "json")]
+    use silex_core::RxGet;
     #[cfg(feature = "json")]
     use silex_core::reactivity::MutationState;
 

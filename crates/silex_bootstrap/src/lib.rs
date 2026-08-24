@@ -1,6 +1,7 @@
 pub mod app_host;
-pub use app_host::{AppHost, AppHostError, HostState, UnmountOutcome};
-pub use silex_core::BootstrapError;
+pub mod error;
+pub use app_host::AppHost;
+pub use error::{AppHostError, BootstrapError, HostState, UnmountOutcome};
 
 #[cfg(feature = "js-object")]
 pub mod js_object;

@@ -4,8 +4,9 @@
 use js_sys::Promise;
 use silex::prelude::*;
 use silex::ui::{AccordionContent, AccordionContentMode, AccordionItem, AccordionTrigger};
-use silex_dom::document;
-use silex_dom::view::{MountContext, MountInstance, MountOwnerToken, View};
+use silex_core::ErrorHandlerInput;
+use silex_dom::browser::BrowserDom;
+use silex_view::{MountContext, MountInstance, MountOwnerToken, View};
 use std::cell::Cell;
 use std::rc::Rc;
 use wasm_bindgen::JsCast;
@@ -15,6 +16,13 @@ use wasm_bindgen_test::*;
 use web_sys::{Element, HtmlElement, HtmlInputElement};
 
 wasm_bindgen_test_configure!(run_in_browser);
+
+fn document() -> web_sys::Document {
+    web_sys::window()
+        .expect("browser tests have a window")
+        .document()
+        .expect("browser tests have a document")
+}
 
 async fn flush_browser_tasks() {
     for _ in 0..4 {
@@ -40,10 +48,19 @@ fn mount_view<'scope, V: View<'scope>>(
     view: &V,
     owner: &MountOwnerToken<'scope>,
     parent: &Element,
-    error_handler: silex_core::ErrorReporter<'scope>,
+    error_handler: &silex_core::ErrorHandlerToken<'scope>,
 ) -> SilexResult<MountInstance<'scope>> {
-    let context = MountContext::for_parent(parent.clone().into(), owner.clone(), error_handler);
-    let instance = view.mount(&context)?;
+    let browser = BrowserDom::new(document());
+    let parent = browser
+        .from_web_sys_node(parent.clone().into())
+        .map_err(|error| SilexError::fatal(SilexErrorKind::Dom(error.to_string())))?;
+    let context = MountContext::for_parent(
+        browser.context(),
+        parent,
+        owner.clone(),
+        error_handler.handler_ref(),
+    );
+    let instance = context.mount(view)?;
     context.transaction().commit()?;
     Ok(instance)
 }
@@ -128,7 +145,7 @@ async fn trigger_and_content_keep_accessibility_state_and_focus_in_sync() {
         .build()
         .expect("accordion item should build");
         let mount_owner = MountOwnerToken::new(owner);
-        let _ = mount_view(&view, &mount_owner, &host, error_handler.view())
+        let _ = mount_view(&view, &mount_owner, &host, &error_handler)
             .expect("accordion item should mount");
 
         let completed = Rc::new(Cell::new(false));
@@ -299,7 +316,7 @@ async fn keep_alive_preserves_wrapper_and_child_identity_when_toggled() {
         .build()
         .expect("accordion content should build");
         let mount_owner = MountOwnerToken::new(owner);
-        let _ = mount_view(&view, &mount_owner, &host, error_handler.view())
+        let _ = mount_view(&view, &mount_owner, &host, &error_handler)
             .expect("accordion content should mount");
 
         let initial_content = content(&host);
@@ -449,7 +466,7 @@ async fn unmount_mode_keeps_wrapper_but_recreates_content_slot() {
         .build()
         .expect("content should build");
         let mount_owner = MountOwnerToken::new(owner);
-        let _ = mount_view(&view, &mount_owner, &host, error_handler.view())
+        let _ = mount_view(&view, &mount_owner, &host, &error_handler)
             .expect("unmount mode content should mount");
 
         let initial_content = content(&host);
@@ -586,7 +603,7 @@ fn unmount_mode_mount_failure_rolls_back_wrapper_and_slot() {
             .build()
             .expect("content should build");
         let mount_owner = MountOwnerToken::new(owner);
-        assert!(mount_view(&view, &mount_owner, &host, error_handler.view()).is_err());
+        assert!(mount_view(&view, &mount_owner, &host, &error_handler).is_err());
         assert!(host.first_child().is_none());
     });
 

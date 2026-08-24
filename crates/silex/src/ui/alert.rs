@@ -1,7 +1,7 @@
 use silex_core::prelude::*;
-use silex_dom::prelude::*;
 use silex_html::div;
 use silex_macros::{component, styled, tw_variants};
+use silex_view::prelude::*;
 
 styled! {
     pub AlertTitle<'scope, Ctx><div>(

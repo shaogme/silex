@@ -8,7 +8,7 @@ use crate::{
     codec::{
         OptionCodec, ParseCodec, PersistCodec, StringCodec, map_decode_error, map_encode_error,
     },
-    runtime::{PersistRuntime, WriteOrigin},
+    runtime::{PersistRuntime, WriteOrigin, schedule_timer},
     state::{
         PersistenceController, PersistenceState, Persistent, apply_backend_event,
         commit_persisted_request, invalidate_debounce, persist_current_value,
@@ -22,7 +22,6 @@ use silex_core::{
     traits::{RxGet, RxWrite},
     unwind_safe,
 };
-use silex_dom::view::{MountOwnerToken, OwnedTimeout};
 use silex_router::RouterContext;
 use std::{
     borrow::Cow,
@@ -499,7 +498,7 @@ where
                 move || -> SilexResult<()> {
                     let (subscription, timer) = take_controller_resources(cleanup_controller)?;
                     if let Some(timer) = &timer {
-                        timer.cancel()?;
+                        timer.cancel();
                     }
                     drop(timer);
                     drop(subscription);
@@ -679,31 +678,15 @@ where
                                                 ))
                                             })
                                     })??;
-                                if let Some(timer) = previous_timer
-                                    && let Err(error) = timer.cancel()
-                                {
-                                    let (current, timer) =
-                                        controller.update_untracked(|controller| {
-                                            controller
-                                                .runtime
-                                                .mark_schedule_failed(ticket, error.to_string())
-                                        })?;
-                                    if let Some(timer) = timer {
-                                        timer.cancel()?;
-                                    }
-                                    if current {
-                                        state
-                                            .set(PersistenceState::WriteError(error.to_string()))?;
-                                    }
-                                    return Ok(());
+                                if let Some(timer) = previous_timer {
+                                    timer.cancel();
                                 }
-                                let owner_token = MountOwnerToken::new(owner_access);
                                 let owner_error_handler =
                                     controller.with_untracked(|controller| {
                                         controller.error_handler.handler_ref()
                                     })?;
-                                match OwnedTimeout::schedule(
-                                    &owner_token,
+                                match schedule_timer(
+                                    owner_access,
                                     move || {
                                         let request =
                                             controller.update_untracked(|controller| {
@@ -724,7 +707,7 @@ where
                                                 controller.runtime.attach_timer(ticket, timer)
                                             })?;
                                         if let Some(timer) = stale_timer {
-                                            timer.cancel()?;
+                                            timer.cancel();
                                         }
                                     }
                                     Err(error) => {
@@ -739,7 +722,7 @@ where
                                                     .mark_schedule_failed(ticket, message.clone())
                                             })?;
                                         if let Some(timer) = timer {
-                                            timer.cancel()?;
+                                            timer.cancel();
                                         }
                                         if current {
                                             state.set(PersistenceState::WriteError(message))?;

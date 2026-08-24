@@ -45,6 +45,10 @@ pub mod dom {
     pub use silex_dom::*;
 }
 
+pub mod view {
+    pub use silex_view::*;
+}
+
 #[cfg(feature = "bootstrap")]
 pub mod bootstrap {
     pub use silex_bootstrap::*;
@@ -88,10 +92,10 @@ pub mod prelude {
     pub use crate::{ReactiveError, SilexError, SilexResult};
     pub use silex_core::prelude::*;
     pub use silex_css::prelude::*;
-    pub use silex_dom::prelude::*;
     pub use silex_html::*;
     pub use silex_macros::*;
     pub use silex_router::*;
+    pub use silex_view::prelude::*;
 
     // Resolve ambiguous glob re-exports
     #[cfg(feature = "css")]
@@ -103,11 +107,11 @@ pub mod prelude {
     pub use silex_css::prelude::{Style, linear_gradient, radial_gradient};
     #[cfg(feature = "tw")]
     pub use silex_css::prelude::{VariantSchema, declare_variants};
-    pub use silex_dom::prelude::{View, text};
     pub use silex_html::{Em, em};
     #[cfg(feature = "css")]
     pub use silex_macros::{global, inject_css, styled, theme};
     #[cfg(feature = "tw")]
     pub use silex_macros::{tw, tw_variants, tw_verbose};
     pub use silex_router::Link;
+    pub use silex_view::{View, text};
 }

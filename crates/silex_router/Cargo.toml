@@ -17,6 +17,7 @@ workspace = true
 [dependencies]
 silex_core = { workspace = true, features = ["error-router"] }
 silex_dom.workspace = true
+silex_view.workspace = true
 silex_html.workspace = true
 silex_macros = { workspace = true, default-features = false, features = ["component", "route"] }
 wasm-bindgen.workspace = true

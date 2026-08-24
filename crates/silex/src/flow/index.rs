@@ -1,8 +1,8 @@
 use silex_core::reactivity::ReactiveSource;
 use silex_core::traits::{ForLoopSource, RxRead, RxReadRef};
-use silex_dom::prelude::*;
-use silex_dom::view::AnyView;
 use silex_macros::component;
+use silex_view::AnyView;
+use silex_view::prelude::*;
 use std::marker::PhantomData;
 use std::rc::Rc;
 
@@ -46,7 +46,7 @@ pub fn Index<'scope, Ctx, IF, I, IS>(
     #[chain]
     children: IndexRenderer<'scope, I>,
     #[chain(default)] _scope: PhantomData<&'scope ()>,
-) -> silex_dom::view::list::IndexedListView<'scope, IF, I, IS>
+) -> silex_view::list::IndexedListView<'scope, IF, I, IS>
 where
     IF: RxRead<Owned = IS> + RxReadRef<IS> + ReactiveSource<'scope> + Clone + 'scope,
     IS: ForLoopSource<Item = I> + 'scope,
@@ -54,7 +54,7 @@ where
 {
     let view_fn = Rc::new(move |item: I, index: usize| children.render(item, index));
 
-    silex_dom::view::list::IndexedListView {
+    silex_view::list::IndexedListView {
         each,
         view_fn,
         _marker: std::marker::PhantomData,

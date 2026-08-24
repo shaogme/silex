@@ -1,8 +1,8 @@
 use silex_router::core::{OwnerAccess, SilexContext};
-use silex_router::dom::attribute::GlobalEventAttributes;
-use silex_router::dom::view::AnyView;
 use silex_router::macros::router;
 use silex_router::{Link, RoutePath, Router, RouterContext, RouterContextProps};
+use silex_view::attribute::GlobalEventAttributes;
+use silex_view::AnyView;
 
 router! {
     enum AppRoute {

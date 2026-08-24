@@ -30,11 +30,11 @@ use crate::route_table::RouteBranchKey;
 use silex_core::{
     RxGet, SilexContext, SilexContextProvider, SilexError, SilexErrorKind, SilexResult,
 };
-use silex_dom::helpers::window_event_listener_untyped;
-use silex_dom::view::{
-    AnyView, BranchEvaluation, BranchRenderContext, MountContext, MountInstance, View,
-};
 use silex_macros::component;
+use silex_view::{
+    AnyView, BranchEvaluation, BranchRenderContext, MountContext, MountInstance, StableBranch, View,
+};
+use silex_view::{Event, EventKind, bind_window_event};
 use std::rc::Rc;
 
 /// 能够转换为本地路由路径的值。
@@ -159,28 +159,20 @@ impl<'scope> RouterView<'scope> {
             layout,
         } = self;
         let ctx = SilexContextProvider::with_error_reporter(ctx?, context.error_handler());
-        let token = context.owner();
         let navigator = ctx.navigator;
-        let listener = window_event_listener_untyped(
-            &token,
-            "popstate",
+        bind_window_event(
+            context,
+            Event::new("popstate", EventKind::Custom),
             move |_| navigator.refresh_location(),
             context.error_handler(),
-        )
-        .map_err(SilexError::fatal)?;
+        )?;
 
         let outlet = RouteOutlet::new(ctx, routes).into_any();
         let view = match layout {
             Some(layout) => layout(ctx, outlet),
             None => outlet,
         };
-        match view.mount(context) {
-            Ok(instance) => Ok(instance),
-            Err(error) => {
-                let _ = listener.cancel();
-                Err(error)
-            }
-        }
+        context.mount(&view)
     }
 }
 
@@ -229,8 +221,7 @@ impl<'scope> View<'scope> for RouteOutlet<'scope> {
         let routes_for_key = routes.clone();
         let prefix = this.prefix;
         let prefix_for_key = prefix.clone();
-        silex_dom::view::mount_branch_stable_cached(
-            context,
+        let branch = StableBranch::new(
             move || {
                 let path = path_signal.get()?;
                 let snapshot = nested_outlet_path(prefix_for_key.as_deref(), &path);
@@ -251,7 +242,8 @@ impl<'scope> View<'scope> for RouteOutlet<'scope> {
                     .map(|(_, view)| view)
                     .unwrap_or(AnyView::Empty)
             },
-        )
+        );
+        context.mount(&branch)
     }
 }
 

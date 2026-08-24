@@ -15,8 +15,9 @@ readme.workspace = true
 workspace = true
 
 [dependencies]
-silex_core = { workspace = true, features = ["error-bootstrap"] }
+silex_core.workspace = true
 silex_dom.workspace = true
+silex_view.workspace = true
 web-sys = { workspace = true, features = [
     "Document",
     "Element",

@@ -14,11 +14,16 @@ readme.workspace = true
 [lints]
 workspace = true
 
+[features]
+default = ["browser"]
+browser = ["dep:js-sys", "dep:wasm-bindgen", "dep:web-sys"]
+ssr = []
+
 [dependencies]
 silex_vtable.workspace = true
-silex_core = { workspace = true, features = ["error-dom"] }
-wasm-bindgen.workspace = true
-web-sys = { workspace = true, features = [
+silex_core.workspace = true
+wasm-bindgen = { workspace = true, optional = true }
+web-sys = { workspace = true, optional = true, features = [
     "Node",
     "NodeList",
     "Document",
@@ -60,9 +65,11 @@ web-sys = { workspace = true, features = [
     "TransitionEvent",
     "CompositionEvent",
     "Location",
-    "PromiseRejectionEvent"
+    "PromiseRejectionEvent",
+    "AddEventListenerOptions",
+    "console"
 ] }
-js-sys.workspace = true
+js-sys = { workspace = true, optional = true }
 
 [dev-dependencies]
 wasm-bindgen-futures.workspace = true

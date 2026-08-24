@@ -1,5 +1,53 @@
-use silex_dom::view::OwnedTimeout;
-use std::mem;
+use gloo_timers::future::TimeoutFuture;
+use silex_core::{
+    ErrorHandlerInput, OwnerAccess, ReactiveError, SilexError, SilexResult, TaskHandle,
+};
+use std::{cell::Cell, mem, rc::Rc, time::Duration};
+
+pub(crate) struct PersistTimer<'scope> {
+    task: TaskHandle<'scope>,
+    active: Rc<Cell<bool>>,
+}
+
+impl<'scope> PersistTimer<'scope> {
+    pub(crate) fn cancel(&self) {
+        self.active.set(false);
+        self.task.cancel();
+    }
+
+    pub(crate) fn finish(&self) {
+        self.active.set(false);
+    }
+}
+
+pub(crate) fn schedule_timer<'scope, H>(
+    owner: OwnerAccess<'scope>,
+    task: impl FnOnce() -> SilexResult<()> + 'scope,
+    duration: Duration,
+    error_handler: H,
+) -> SilexResult<PersistTimer<'scope>>
+where
+    H: ErrorHandlerInput<'scope>,
+{
+    let lease = error_handler
+        .handler_ref()
+        .lease()
+        .map_err(|error| SilexError::fatal(ReactiveError::Handler(error)))?;
+    let active = Rc::new(Cell::new(true));
+    let active_for_task = active.clone();
+    let milliseconds = duration.as_millis().try_into().unwrap_or(u32::MAX);
+    let task = owner.spawn_scoped(
+        async move {
+            TimeoutFuture::new(milliseconds).await;
+            active_for_task.set(false);
+            if let Err(error) = task() {
+                let _ = lease.handle(error);
+            }
+        },
+        error_handler,
+    )?;
+    Ok(PersistTimer { task, active })
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct WriteToken {
@@ -36,7 +84,7 @@ pub(crate) enum RuntimePhase {
 
 pub(crate) struct PersistRuntime<'scope> {
     phase: RuntimePhase,
-    timer: Option<OwnedTimeout<'scope>>,
+    timer: Option<PersistTimer<'scope>>,
     next_revision: u64,
     last_backend_raw: Option<String>,
     last_origin: WriteOrigin,
@@ -70,7 +118,7 @@ impl<'scope> PersistRuntime<'scope> {
         &mut self,
         raw: Option<String>,
         origin: WriteOrigin,
-    ) -> Option<(WriteToken, Option<OwnedTimeout<'scope>>)> {
+    ) -> Option<(WriteToken, Option<PersistTimer<'scope>>)> {
         if matches!(self.phase, RuntimePhase::Closed) {
             return None;
         }
@@ -84,8 +132,8 @@ impl<'scope> PersistRuntime<'scope> {
     pub(crate) fn attach_timer(
         &mut self,
         token: WriteToken,
-        timer: OwnedTimeout<'scope>,
-    ) -> Option<OwnedTimeout<'scope>> {
+        timer: PersistTimer<'scope>,
+    ) -> Option<PersistTimer<'scope>> {
         if matches!(
             &self.phase,
             RuntimePhase::Scheduled(current) if current.token == token
@@ -129,7 +177,7 @@ impl<'scope> PersistRuntime<'scope> {
         &mut self,
         token: WriteToken,
         message: String,
-    ) -> (bool, Option<OwnedTimeout<'scope>>) {
+    ) -> (bool, Option<PersistTimer<'scope>>) {
         let phase = mem::replace(&mut self.phase, RuntimePhase::Idle);
         match phase {
             RuntimePhase::Scheduled(request) if request.token == token => {
@@ -175,7 +223,7 @@ impl<'scope> PersistRuntime<'scope> {
     pub(crate) fn apply_external_snapshot(
         &mut self,
         raw: Option<String>,
-    ) -> Option<OwnedTimeout<'scope>> {
+    ) -> Option<PersistTimer<'scope>> {
         if matches!(self.phase, RuntimePhase::Closed) {
             return None;
         }
@@ -186,7 +234,7 @@ impl<'scope> PersistRuntime<'scope> {
         timer
     }
 
-    pub(crate) fn invalidate(&mut self) -> Option<OwnedTimeout<'scope>> {
+    pub(crate) fn invalidate(&mut self) -> Option<PersistTimer<'scope>> {
         if matches!(self.phase, RuntimePhase::Closed) {
             return None;
         }
@@ -194,7 +242,7 @@ impl<'scope> PersistRuntime<'scope> {
         self.timer.take()
     }
 
-    pub(crate) fn close(&mut self) -> Option<OwnedTimeout<'scope>> {
+    pub(crate) fn close(&mut self) -> Option<PersistTimer<'scope>> {
         if matches!(self.phase, RuntimePhase::Closed) {
             return None;
         }

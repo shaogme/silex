@@ -6,8 +6,9 @@ use silex::prelude::*;
 use silex::ui::{
     Dialog, Popover, PopoverContent, PopoverTrigger, Tooltip, TooltipContent, TooltipTrigger,
 };
-use silex_dom::document;
-use silex_dom::view::{MountContext, MountInstance, MountOwnerToken, View};
+use silex_core::ErrorHandlerInput;
+use silex_dom::browser::BrowserDom;
+use silex_view::{MountContext, MountInstance, MountOwnerToken, View};
 use std::rc::Rc;
 use std::{
     cell::Cell,
@@ -20,6 +21,13 @@ use wasm_bindgen_test::*;
 use web_sys::Element;
 
 wasm_bindgen_test_configure!(run_in_browser);
+
+fn document() -> web_sys::Document {
+    web_sys::window()
+        .expect("browser tests have a window")
+        .document()
+        .expect("browser tests have a document")
+}
 
 async fn flush_browser_tasks() {
     for _ in 0..4 {
@@ -91,10 +99,19 @@ fn mount_view<'scope, V: View<'scope>>(
     view: &V,
     owner: &MountOwnerToken<'scope>,
     parent: &Element,
-    error_handler: silex_core::ErrorReporter<'scope>,
+    error_handler: &silex_core::ErrorHandlerToken<'scope>,
 ) -> SilexResult<MountInstance<'scope>> {
-    let context = MountContext::for_parent(parent.clone().into(), owner.clone(), error_handler);
-    let instance = view.mount(&context)?;
+    let browser = BrowserDom::new(document());
+    let parent = browser
+        .from_web_sys_node(parent.clone().into())
+        .map_err(|error| SilexError::fatal(SilexErrorKind::Dom(error.to_string())))?;
+    let context = MountContext::for_parent(
+        browser.context(),
+        parent,
+        owner.clone(),
+        error_handler.handler_ref(),
+    );
+    let instance = context.mount(view)?;
     context.transaction().commit()?;
     Ok(instance)
 }
@@ -197,6 +214,7 @@ fn assert_not_hit(element: &Element, x: f32, y: f32, label: &str) {
     }
 }
 
+#[derive(Clone)]
 struct FailingView;
 
 impl<'scope> View<'scope> for FailingView {
@@ -207,6 +225,7 @@ impl<'scope> View<'scope> for FailingView {
     }
 }
 
+#[derive(Clone)]
 struct PanickingView;
 
 impl<'scope> View<'scope> for PanickingView {
@@ -249,7 +268,7 @@ async fn portal_modal_does_not_duplicate_content_after_repeated_toggles() {
                 .build(),
         ];
         let mount_owner = MountOwnerToken::new(owner);
-        let _ = mount_view(&view, &mount_owner, &host, error_handler.view())
+        let _ = mount_view(&view, &mount_owner, &host, &error_handler)
             .expect("portal demo should mount");
         let completed_for_task = completed.clone();
         let valid_for_task = valid.clone();
@@ -387,8 +406,8 @@ async fn tooltip_mouse_crossing_keeps_host_wrapper_and_content_identity() {
         .build()
         .expect("tooltip should build");
         let mount_owner = MountOwnerToken::new(owner);
-        let _ = mount_view(&view, &mount_owner, &host, error_handler.view())
-            .expect("tooltip should mount");
+        let _ =
+            mount_view(&view, &mount_owner, &host, &error_handler).expect("tooltip should mount");
     });
 
     let trigger = document()
@@ -507,12 +526,11 @@ async fn tooltip_mouse_crossing_keeps_host_wrapper_and_content_identity() {
     assert_not_hit(&content, open_x, open_y, "closed tooltip content");
 
     root.close().expect("root cleanup should succeed");
-    assert_eq!(
+    assert!(
         document()
             .query_selector("body > div[data-portal-host=tooltip]")
             .expect("tooltip Portal selector should be valid")
-            .is_none(),
-        true
+            .is_none()
     );
     host.parent_node()
         .expect("test host should be attached")
@@ -543,8 +561,8 @@ async fn popover_keeps_host_and_overlay_stable_across_click_outside() {
         .build()
         .expect("popover should build");
         let mount_owner = MountOwnerToken::new(owner);
-        let _ = mount_view(&view, &mount_owner, &host, error_handler.view())
-            .expect("popover should mount");
+        let _ =
+            mount_view(&view, &mount_owner, &host, &error_handler).expect("popover should mount");
     });
 
     let trigger = document()
@@ -705,11 +723,19 @@ fn popover_host_is_detached_before_mount_transaction_commit() {
         .build()
         .expect("popover should build");
         let mount_owner = MountOwnerToken::new(owner);
-        let context =
-            MountContext::for_parent(host.clone().into(), mount_owner, error_handler.view());
+        let browser = BrowserDom::new(document());
+        let host_node = browser
+            .from_web_sys_node(host.clone().into())
+            .expect("host should have a DOM handle");
+        let context = MountContext::for_parent(
+            browser.context(),
+            host_node,
+            mount_owner,
+            error_handler.handler_ref(),
+        );
 
-        let _ = view
-            .mount(&context)
+        let _ = context
+            .mount(&view)
             .expect("popover should mount into the open transaction");
 
         assert!(
@@ -785,7 +811,7 @@ fn portal_host_attrs_reject_reserved_fields_and_mount_allowed_fields() {
             .host_attrs(host_attrs)
             .build();
         let mount_owner = MountOwnerToken::new(owner);
-        let _ = mount_view(&view, &mount_owner, &host, error_handler.view())
+        let _ = mount_view(&view, &mount_owner, &host, &error_handler)
             .expect("portal should mount with explicit host attrs");
 
         let portal = portal_host();
@@ -825,8 +851,8 @@ fn portal_host_mutations_cannot_open_closed_visibility_root() {
             )
             .build();
         let mount_owner = MountOwnerToken::new(owner);
-        let _ = mount_view(&view, &mount_owner, &host, error_handler.view())
-            .expect("portal should mount");
+        let _ =
+            mount_view(&view, &mount_owner, &host, &error_handler).expect("portal should mount");
 
         let portal = portal_host();
         let root = portal_visibility_root();
@@ -900,8 +926,8 @@ fn dialog_restores_focus_and_keeps_host_stable_across_overlay_close() {
                 .expect("dialog should build")
         ));
         let mount_owner = MountOwnerToken::new(owner);
-        let _ = mount_view(&view, &mount_owner, &host, error_handler.view())
-            .expect("dialog should mount");
+        let _ =
+            mount_view(&view, &mount_owner, &host, &error_handler).expect("dialog should mount");
     });
 
     let trigger = document()
@@ -1070,7 +1096,7 @@ async fn portal_unmount_mode_keeps_host_and_unmounts_only_content() {
             )
             .build();
         let mount_owner = MountOwnerToken::new(owner);
-        let _ = mount_view(&view, &mount_owner, &host, error_handler.view())
+        let _ = mount_view(&view, &mount_owner, &host, &error_handler)
             .expect("unmount mode portal should mount");
         assert_eq!(portal_host_count(), 1);
         assert!(
@@ -1174,7 +1200,7 @@ fn portal_mount_failure_leaves_no_host() {
             )
             .build();
         let mount_owner = MountOwnerToken::new(owner);
-        assert!(mount_view(&failing, &mount_owner, &host, error_handler.view()).is_err());
+        assert!(mount_view(&failing, &mount_owner, &host, &error_handler).is_err());
         assert_eq!(portal_host_count(), 0);
     });
 
@@ -1208,7 +1234,7 @@ fn portal_mount_panic_leaves_no_host() {
             .build();
         let mount_owner = MountOwnerToken::new(owner);
         let result = catch_unwind(AssertUnwindSafe(|| {
-            let _ = mount_view(&panicking, &mount_owner, &host, error_handler.view());
+            let _ = mount_view(&panicking, &mount_owner, &host, &error_handler);
         }));
         assert!(result.is_err(), "Portal should rethrow child mount panics");
         assert_eq!(portal_host_count(), 0);
@@ -1237,9 +1263,13 @@ fn portal_host_respects_explicit_target_and_cleanup() {
             .error_handler(|_| {})
             .expect("test error handler should be registered");
         let ctx = SilexContext::new(owner, error_handler.view());
+        let browser = BrowserDom::new(document());
+        let target_node = browser
+            .from_web_sys_node(target.clone().into())
+            .expect("target should have a DOM handle");
         let view = PortalHost(ctx)
             .children(div("target content"))
-            .mount_to(Some(target.clone().into()))
+            .mount_to(Some(target_node))
             .host_attrs(
                 PortalHostAttrs::new()
                     .attr("data-portal-host", "")
@@ -1247,8 +1277,22 @@ fn portal_host_respects_explicit_target_and_cleanup() {
             )
             .build();
         let mount_owner = MountOwnerToken::new(owner);
-        let _ = mount_view(&view, &mount_owner, &host, error_handler.view())
+        let host_node = browser
+            .from_web_sys_node(host.clone().into())
+            .expect("host should have a DOM handle");
+        let context = MountContext::for_parent(
+            browser.context(),
+            host_node,
+            mount_owner,
+            error_handler.handler_ref(),
+        );
+        let _ = context
+            .mount(&view)
             .expect("target PortalHost should mount");
+        context
+            .transaction()
+            .commit()
+            .expect("target PortalHost transaction should commit");
         assert_eq!(portal_host_count(), 0);
         let target_host = target
             .query_selector("[data-portal-host]")

@@ -1,7 +1,7 @@
 use silex_core::prelude::*;
-use silex_dom::prelude::*;
 use silex_html::button;
 use silex_macros::{component, tw_variants};
+use silex_view::prelude::*;
 
 #[component]
 pub fn Button<'scope, Ctx>(

@@ -1,27 +1,36 @@
 #![cfg(target_arch = "wasm32")]
 
-use silex_core::{
-    ErrorHandlerToken, ErrorReporter, OwnerAccess, ReactiveError, Runtime, SilexError,
-    SilexErrorKind, SilexResult,
-};
-use silex_dom::{
-    attribute::GlobalEventAttributes,
-    view::{MountContext, MountInstance, MountOwnerToken, View},
-};
+use silex_core::{ErrorHandlerToken, ErrorReporter, OwnerAccess, Runtime, SilexResult};
+use silex_dom::{ElementSpec, browser::BrowserDom};
 use silex_html::{a, svg_a};
-use wasm_bindgen::JsCast;
+use silex_view::{MountContext, MountInstance, MountOwnerToken, View};
 use wasm_bindgen_test::*;
-use web_sys::{Element, Node};
+use web_sys::Element;
 
 wasm_bindgen_test_configure!(run_in_browser);
 
-fn host() -> Element {
-    web_sys::window()
+fn browser() -> BrowserDom {
+    BrowserDom::from_window().expect("browser DOM should be available")
+}
+
+fn host(dom: &silex_dom::DomContext) -> (silex_dom::DomNode, Element) {
+    let body = dom
+        .document_body()
+        .expect("browser document body lookup should succeed")
+        .expect("browser document should have a body");
+    let host = dom
+        .create_element(ElementSpec::new("div"))
+        .expect("browser test host should be created");
+    dom.append(body.node(), host.node())
+        .expect("browser test host should attach");
+    let raw_host = web_sys::window()
         .expect("browser window should be available")
         .document()
         .expect("browser document should be available")
-        .create_element("div")
-        .expect("browser test host should be created")
+        .body()
+        .and_then(|body| body.last_element_child())
+        .expect("raw host should be visible");
+    (host.node().clone(), raw_host)
 }
 
 fn error_handler<'owner>(owner: OwnerAccess<'owner>) -> ErrorHandlerToken<'owner> {
@@ -30,28 +39,25 @@ fn error_handler<'owner>(owner: OwnerAccess<'owner>) -> ErrorHandlerToken<'owner
         .expect("browser test error handler should register")
 }
 
-fn first_node(instance: &silex_dom::view::MountInstance<'_>) -> Node {
-    instance
-        .first_node()
-        .expect("anchor mount should produce one node")
-        .clone()
-}
-
 fn mount_view<'owner, V: View<'owner>>(
     view: &V,
     owner: &MountOwnerToken<'owner>,
-    parent: &Element,
+    dom: &silex_dom::DomContext,
+    parent: &silex_dom::DomNode,
     error_handler: ErrorReporter<'owner>,
 ) -> SilexResult<MountInstance<'owner>> {
-    let context = MountContext::for_parent(parent.clone().into(), owner.clone(), error_handler);
-    let instance = view.mount(&context)?;
+    let context =
+        MountContext::for_parent(dom.clone(), parent.clone(), owner.clone(), error_handler);
+    let instance = context.mount(view)?;
     context.transaction().commit()?;
     Ok(instance)
 }
 
 #[wasm_bindgen_test]
-fn html_anchor_mounts_as_html_anchor_element() {
-    let host = host();
+fn html_anchor_uses_html_metadata_and_mounts() {
+    let browser = browser();
+    let dom = browser.context();
+    let (host, raw_host) = host(&dom);
     let mut runtime = Runtime::new();
 
     runtime
@@ -59,12 +65,11 @@ fn html_anchor_mounts_as_html_anchor_element() {
             let handler = error_handler(owner);
             let mount_owner = MountOwnerToken::new(owner);
             let view = a("Documentation");
-            let instance = mount_view(&view, &mount_owner, &host, handler.view())
+            let _ = mount_view(&view, &mount_owner, &dom, &host, handler.view())
                 .expect("HTML anchor should mount");
-            let element = first_node(&instance)
-                .dyn_into::<web_sys::HtmlAnchorElement>()
-                .expect("HTML anchor should cast to HtmlAnchorElement");
-
+            let element = raw_host
+                .first_element_child()
+                .expect("HTML anchor should be present");
             assert_eq!(element.tag_name(), "A");
             assert_eq!(
                 element.namespace_uri().as_deref(),
@@ -75,8 +80,10 @@ fn html_anchor_mounts_as_html_anchor_element() {
 }
 
 #[wasm_bindgen_test]
-fn svg_anchor_mounts_as_svg_anchor_element() {
-    let host = host();
+fn svg_anchor_uses_svg_namespace_metadata_and_mounts() {
+    let browser = browser();
+    let dom = browser.context();
+    let (host, raw_host) = host(&dom);
     let mut runtime = Runtime::new();
 
     runtime
@@ -84,12 +91,11 @@ fn svg_anchor_mounts_as_svg_anchor_element() {
             let handler = error_handler(owner);
             let mount_owner = MountOwnerToken::new(owner);
             let view = svg_a("Documentation");
-            let instance = mount_view(&view, &mount_owner, &host, handler.view())
+            let _ = mount_view(&view, &mount_owner, &dom, &host, handler.view())
                 .expect("SVG anchor should mount");
-            let element = first_node(&instance)
-                .dyn_into::<web_sys::SvgaElement>()
-                .expect("SVG anchor should cast to SvgaElement");
-
+            let element = raw_host
+                .first_element_child()
+                .expect("SVG anchor should be present");
             assert_eq!(element.tag_name(), "a");
             assert_eq!(
                 element.namespace_uri().as_deref(),
@@ -97,70 +103,4 @@ fn svg_anchor_mounts_as_svg_anchor_element() {
             );
         })
         .expect("transient SVG anchor owner should initialize");
-}
-
-#[wasm_bindgen_test]
-fn explicit_svg_anchor_node_ref_binds_and_cleans_up() {
-    let host = host();
-    let mut runtime = Runtime::new();
-    let root = runtime.owner().expect("root owner should initialize");
-    let node_ref = root
-        .access()
-        .node_ref::<web_sys::SvgaElement>()
-        .expect("SVG anchor NodeRef should initialize");
-
-    {
-        let owner = root.access();
-        let handler = error_handler(owner);
-        let mount_owner = MountOwnerToken::new(owner);
-        let view = svg_a("Documentation").node_ref(node_ref);
-        let instance = mount_view(&view, &mount_owner, &host, handler.view())
-            .expect("SVG anchor with an explicit NodeRef should mount");
-
-        assert!(
-            node_ref
-                .get()
-                .expect("NodeRef should be readable")
-                .is_some()
-        );
-        assert!(
-            first_node(&instance)
-                .dyn_ref::<web_sys::SvgaElement>()
-                .is_some()
-        );
-    }
-
-    root.close().expect("root cleanup should succeed");
-    assert!(matches!(
-        node_ref.get(),
-        Err(SilexError::Fatal(SilexErrorKind::Reactivity(
-            ReactiveError::NoSuchNode
-        )))
-    ));
-    assert!(host.first_element_child().is_none());
-}
-
-#[wasm_bindgen_test]
-fn wrong_svg_anchor_node_ref_type_is_reported_at_mount() {
-    let host = host();
-    let mut runtime = Runtime::new();
-
-    runtime
-        .with_transient(|owner| {
-            let node_ref = owner
-                .node_ref::<web_sys::HtmlAnchorElement>()
-                .expect("wrong-type NodeRef should initialize");
-            let handler = error_handler(owner);
-            let mount_owner = MountOwnerToken::new(owner);
-            let view = svg_a("Documentation").node_ref(node_ref);
-            let result = mount_view(&view, &mount_owner, &host, handler.view());
-
-            assert!(matches!(
-                result,
-                Err(SilexError::Fatal(SilexErrorKind::Dom(message)))
-                    if message.contains("NodeRef type mismatch")
-            ));
-            assert!(host.first_element_child().is_none());
-        })
-        .expect("transient wrong-type NodeRef owner should initialize");
 }

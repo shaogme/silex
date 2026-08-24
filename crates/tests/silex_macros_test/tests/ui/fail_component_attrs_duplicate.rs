@@ -2,7 +2,7 @@
 
 include!("../../src/lib.rs");
 
-use silex_dom::prelude::*;
+use silex_view::prelude::*;
 use silex_macros::component;
 
 #[component]

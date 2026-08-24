@@ -1,3 +1,4 @@
+use crate::crate_path::silex_view;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
 use std::collections::HashSet;
@@ -383,8 +384,9 @@ impl BuilderContext {
 
     fn pending_attribute_ty(&self) -> TokenStream2 {
         let __silex = crate::crate_path::silex();
+        let __view = silex_view();
         let scope = self.owner_lifetime();
-        quote! { #__silex::dom::attribute::AttrOp<#scope> }
+        quote! { #__view::attribute::AttrOp<#scope> }
     }
 
     fn has_attrs(&self) -> bool {
@@ -465,6 +467,7 @@ impl BuilderContext {
 
     fn generate_builder_impl(&self) -> TokenStream2 {
         let __silex = crate::crate_path::silex();
+        let __view = silex_view();
         let (builder_generics_decl, builder_generics_type) = self.get_builder_generics();
         let builder_name = &self.builder_name;
         let where_clause = self.ctx_where_clause();
@@ -472,7 +475,7 @@ impl BuilderContext {
         let initial_states: Vec<_> = self
             .prop_generic_idents
             .iter()
-            .map(|_| quote! { #__silex::dom::view::PropMissing })
+            .map(|_| quote! { #__view::PropMissing })
             .collect();
         let builder_ty_initial = self.get_builder_ty(&initial_states);
 
@@ -491,7 +494,7 @@ impl BuilderContext {
             let ident = &field.ident;
             if field.attrs.attrs {
                 quote! {
-                    #ident: #__silex::dom::attribute::AttributeGroup::default()
+                    #ident: #__view::attribute::AttributeGroup::default()
                 }
             } else if !field.attrs.chained {
                 quote! { #ident }
@@ -535,6 +538,7 @@ impl BuilderContext {
 
     fn generate_setter(&self, field: &FieldSpec) -> TokenStream2 {
         let __silex = crate::crate_path::silex();
+        let __view = silex_view();
         let builder_name = &self.builder_name;
         let ident = &field.ident;
         let ty = &field.ty;
@@ -565,14 +569,14 @@ impl BuilderContext {
             vec_item_ty.as_ref()
         {
             let setter_param = if field.attrs.render && is_any_view_type(item_ty) {
-                quote! { impl #__silex::dom::view::View<#scope> + #scope }
+                quote! { impl #__view::View<#scope> + #scope }
             } else if field.attrs.into_trait || is_auto_into_type(item_ty) {
                 quote! { impl ::core::convert::Into<#item_ty> }
             } else {
                 quote! { #item_ty }
             };
             let setter_value = if field.attrs.render && is_any_view_type(item_ty) {
-                quote! { #__silex::dom::view::View::into_any(val) }
+                quote! { #__view::View::into_any(val) }
             } else if field.attrs.into_trait || is_auto_into_type(item_ty) {
                 quote! { val.into() }
             } else {
@@ -589,7 +593,7 @@ impl BuilderContext {
                 quote! {
                     where
                         #render_fn: Fn(#(#render_fn_args),*) -> #render_view + #scope,
-                        #render_view: #__silex::dom::view::View<#scope> + #scope,
+                        #render_view: #__view::View<#scope> + #scope,
                 },
             )
         } else if reactive_input {
@@ -609,7 +613,7 @@ impl BuilderContext {
             )
         } else {
             let setter_param = if is_any_view_type(ty) {
-                quote! { impl #__silex::dom::view::View<#scope> + #scope }
+                quote! { impl #__view::View<#scope> + #scope }
             } else if field.attrs.render {
                 quote! { #ty }
             } else if field.attrs.into_trait || is_auto_into_type(ty) {
@@ -618,7 +622,7 @@ impl BuilderContext {
                 quote! { #ty }
             };
             let setter_value = if is_any_view_type(ty) {
-                quote! { #__silex::dom::view::View::into_any(val) }
+                quote! { #__view::View::into_any(val) }
             } else if field.attrs.into_trait || is_auto_into_type(ty) {
                 quote! { val.into() }
             } else {
@@ -649,7 +653,7 @@ impl BuilderContext {
             let mut return_states = Vec::new();
             for (i, p) in self.prop_generic_idents.iter().enumerate() {
                 if i == req_index {
-                    return_states.push(quote! { #__silex::dom::view::PropFixed });
+                    return_states.push(quote! { #__view::PropFixed });
                 } else {
                     return_states.push(quote! { #p });
                 }
@@ -727,6 +731,7 @@ impl BuilderContext {
 
     fn generate_build_impl(&self) -> TokenStream2 {
         let __silex = crate::crate_path::silex();
+        let __view = silex_view();
         let (impl_generics, ty_generics, _) = self.generics.split_for_impl();
         let where_clause = self.ctx_where_clause();
         let product_name = &self.product_name;
@@ -737,7 +742,7 @@ impl BuilderContext {
         let fixed_states: Vec<_> = self
             .prop_generic_idents
             .iter()
-            .map(|_| quote! { #__silex::dom::view::PropFixed })
+            .map(|_| quote! { #__view::PropFixed })
             .collect();
         let builder_ty_fixed = self.get_builder_ty(&fixed_states);
         let fields_destructure: Vec<_> = self.fields.iter().map(|field| &field.ident).collect();
@@ -797,7 +802,7 @@ impl BuilderContext {
                 quote! {
                     #ident: {
                         let _ = #ident;
-                        #__silex::dom::attribute::AttributeGroup(_pending_attrs)
+                        #__view::attribute::AttributeGroup(_pending_attrs)
                     }
                 }
             } else {
@@ -842,6 +847,7 @@ impl BuilderContext {
 
     fn generate_view_impl(&self) -> TokenStream2 {
         let __silex = crate::crate_path::silex();
+        let __view = silex_view();
         let (impl_generics, _, _) = self.generics.split_for_impl();
         let product_name = &self.product_name;
         let (_, product_ty_generics, _) = self.generics.split_for_impl();
@@ -865,12 +871,12 @@ impl BuilderContext {
                 context.error_handler(),
             );
             let view_instance = #render_fn_name(product.props);
-            #__silex::dom::view::View::mount(&view_instance, context)
+            context.mount(&view_instance)
         };
 
         quote! {
-            impl #impl_generics #__silex::dom::view::View<#scope> for #product_ty #view_where_clause {
-                fn mount(&self, context: &#__silex::dom::view::MountContext<#scope>) -> #__silex::core::SilexResult<#__silex::dom::view::MountInstance<#scope>> {
+            impl #impl_generics #__view::View<#scope> for #product_ty #view_where_clause {
+                fn mount(&self, context: &#__view::MountContext<#scope>) -> #__silex::core::SilexResult<#__view::MountInstance<#scope>> {
                     let mut product = self.clone();
                     #mount_body
                 }
@@ -880,15 +886,16 @@ impl BuilderContext {
 
     fn generate_attribute_builder_methods(&self) -> TokenStream2 {
         let __silex = crate::crate_path::silex();
+        let __view = silex_view();
         let scope = self.owner_lifetime();
 
         quote! {
-            fn build_attribute<__SilexValue>(mut self, target: #__silex::dom::attribute::ApplyTarget, value: __SilexValue) -> Self
+            fn build_attribute<__SilexValue>(mut self, target: #__view::attribute::ApplyTarget, value: __SilexValue) -> Self
             where
-                __SilexValue: #__silex::dom::attribute::IntoStorable<#scope>,
+                __SilexValue: #__view::attribute::IntoStorable<#scope>,
             {
                 self._pending_attrs.push(
-                    #__silex::dom::attribute::AttrOp::<#scope>::build(
+                    #__view::attribute::AttrOp::<#scope>::build(
                         value.into_storable(),
                         target,
                     )
@@ -898,18 +905,17 @@ impl BuilderContext {
 
             fn build_event<E, F, M>(mut self, event: E, callback: F) -> Self
             where
-                E: #__silex::dom::event::EventDescriptor + 'static,
-                F: #__silex::dom::event::EventHandler<#scope, E::EventType, M> + Clone + #scope,
+                E: #__view::event::EventDescriptor + 'static,
+                F: #__view::event::EventHandler<#scope, M> + Clone + #scope,
             {
                 let event = event.clone();
                 self._pending_attrs.push(
-                    #__silex::dom::attribute::AttrOp::<#scope>::new_scoped(move |el, context| {
-                        let owner = context.owner();
-                        #__silex::dom::element::bind_event(
+                    #__view::attribute::AttrOp::<#scope>::new_scoped(move |el, context| {
+                        #__view::event::bind_event(
+                            context,
                             el,
                             event,
                             callback.clone(),
-                            &owner,
                             context.error_handler(),
                         )
                     })
@@ -924,6 +930,7 @@ impl BuilderContext {
             return quote! {};
         }
         let __silex = crate::crate_path::silex();
+        let __view = silex_view();
         let (builder_generics_decl, _) = self.get_builder_generics();
         let builder_where_clause = self.ctx_where_clause();
         let scope = self.owner_lifetime();
@@ -937,7 +944,7 @@ impl BuilderContext {
         let methods = self.generate_attribute_builder_methods();
         let carrier_impls = self.generate_carrier_impls();
         let attrs_method = quote! {
-            pub fn attrs(mut self, group: #__silex::dom::attribute::AttributeGroup<#scope>) -> Self {
+            pub fn attrs(mut self, group: #__view::attribute::AttributeGroup<#scope>) -> Self {
                 self._pending_attrs.extend(group.0);
                 self
             }
@@ -948,7 +955,7 @@ impl BuilderContext {
                 #attrs_method
             }
 
-            impl #builder_generics_decl #__silex::dom::attribute::AttributeBuilder<#scope> for #builder_ty_current #builder_where_clause {
+            impl #builder_generics_decl #__view::attribute::AttributeBuilder<#scope> for #builder_ty_current #builder_where_clause {
                 #methods
             }
 
@@ -992,6 +999,7 @@ impl BuilderContext {
 
     fn generate_constructor(&self) -> TokenStream2 {
         let __silex = crate::crate_path::silex();
+        let __view = silex_view();
         let vis = &self.vis;
         let component_name = &self.component_name;
         let (impl_generics, _, _) = self.generics.split_for_impl();
@@ -1001,7 +1009,7 @@ impl BuilderContext {
         let initial_states: Vec<_> = self
             .prop_generic_idents
             .iter()
-            .map(|_| quote! { #__silex::dom::view::PropMissing })
+            .map(|_| quote! { #__view::PropMissing })
             .collect();
         let builder_ty_initial = self.get_builder_ty(&initial_states);
 
@@ -1015,7 +1023,7 @@ impl BuilderContext {
             let ident = &field.ident;
             let ty = &field.ty;
             if is_any_view_type(ty) {
-                quote! { #ident: impl #__silex::dom::view::View<#scope> + #scope }
+                quote! { #ident: impl #__view::View<#scope> + #scope }
             } else if field.attrs.into_trait || is_auto_into_type(ty) {
                 quote! { #ident: impl ::core::convert::Into<#ty> }
             } else {
@@ -1027,7 +1035,7 @@ impl BuilderContext {
             let ident = &field.ident;
             let ty = &field.ty;
             if is_any_view_type(ty) {
-                quote! { #__silex::dom::view::View::into_any(#ident) }
+                quote! { #__view::View::into_any(#ident) }
             } else if field.attrs.into_trait || is_auto_into_type(ty) {
                 quote! { #ident.into() }
             } else {
@@ -1068,9 +1076,10 @@ pub fn derive_props_builder_impl(input: DeriveInput) -> syn::Result<TokenStream2
 
 fn field_value_transform(field: &FieldSpec, input: TokenStream2) -> TokenStream2 {
     let __silex = crate::crate_path::silex();
+    let __view = silex_view();
     let ty = &field.ty;
     if field.attrs.render && is_any_view_type(ty) {
-        quote! { #__silex::dom::view::View::into_any(#input) }
+        quote! { #__view::View::into_any(#input) }
     } else if field.attrs.into_trait || (is_auto_into_type(ty) && !is_any_view_type(ty)) {
         quote! { ::core::convert::Into::into(#input) }
     } else {

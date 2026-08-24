@@ -1,7 +1,7 @@
 use silex_core::reactivity::SuspenseContext;
-use silex_dom::prelude::*;
 use silex_html::div;
 use silex_macros::component;
+use silex_view::prelude::*;
 use std::rc::Rc;
 
 #[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]

@@ -286,8 +286,9 @@ fn ErrorHandlingDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
                             "value",
                             settings.map(owner, |s| s.username.clone(), error_handler)?
                         )
-                        .on(event::input, move |e| {
-                            settings.update(|s| s.username = event_target_value(&e))?;
+                        .on(event::input, move |e: DomEvent| {
+                            settings
+                                .update(|s| s.username = e.input_value().unwrap_or_default())?;
                             Ok(())
                         })
                         .style(
@@ -312,8 +313,8 @@ fn ErrorHandlingDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
                         .attr("min", "0")
                         .attr("max", "100")
                         .prop("value", settings.map(owner, |s| s.volume, error_handler)?)
-                        .on(event::input, move |e| {
-                            if let Ok(v) = event_target_value(&e).parse::<u32>() {
+                        .on(event::input, move |e: DomEvent| {
+                            if let Ok(v) = e.input_value().unwrap_or_default().parse::<u32>() {
                                 settings.update(|s| s.volume = v)?;
                             }
                             Ok(())

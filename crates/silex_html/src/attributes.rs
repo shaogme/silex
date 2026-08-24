@@ -1,10 +1,9 @@
-use silex_dom::{
-    attribute::{AttributeBuilder, IntoStorable},
+use silex_view::{
+    AttributeBuilder,
+    attribute::IntoStorable,
     element::{
+        AnchorTag, FormTag, LabelTag, MediaTag, OpenTag, TableCellTag, TableHeaderTag, Tag,
         TypedElement,
-        tags::{
-            AnchorTag, FormTag, LabelTag, MediaTag, OpenTag, TableCellTag, TableHeaderTag, Tag,
-        },
     },
 };
 

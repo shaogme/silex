@@ -131,7 +131,7 @@ async fn resource_read_guards_hold_state_leases() {
                 .expect("resource creation");
             resource.set(7).expect("resource value");
             let resource_guard = resource.read().expect("resource guard");
-            resource_guard.with_option(|value| assert_eq!(value.map(|item| *item), Some(7)));
+            resource_guard.with_option(|value| assert_eq!(value.copied(), Some(7)));
             assert!(resource.set(8).is_err());
             resource_guard.finish().expect("resource finish");
             resource.set(8).expect("resource update after finish");

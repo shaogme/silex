@@ -1,7 +1,7 @@
 use silex_core::prelude::*;
-use silex_dom::prelude::*;
 use silex_html::{button, div};
 use silex_macros::{component, tw, tw_variants};
+use silex_view::prelude::*;
 
 #[component]
 pub fn Tabs<'scope, Ctx>(

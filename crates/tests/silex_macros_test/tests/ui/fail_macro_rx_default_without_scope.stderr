@@ -1,19 +1,5 @@
 error: component functions must declare exactly one `#[ctx]` parameter
-  --> tests/ui/fail_macro_rx_default_without_scope.rs:10:4
-   |
-10 | fn MissingRxDefaultScope<'owner>(
-   |    ^^^^^^^^^^^^^^^^^^^^^
-
-warning: unused import: `silex_core::prelude::*`
- --> tests/ui/fail_macro_rx_default_without_scope.rs:5:5
+ --> tests/ui/fail_macro_rx_default_without_scope.rs:8:4
   |
-5 | use silex_core::prelude::*;
-  |     ^^^^^^^^^^^^^^^^^^^^^^
-  |
-  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
-
-warning: unused import: `silex_dom::prelude::*`
- --> tests/ui/fail_macro_rx_default_without_scope.rs:6:5
-  |
-6 | use silex_dom::prelude::*;
-  |     ^^^^^^^^^^^^^^^^^^^^^
+8 | fn MissingRxDefaultScope<'owner>(
+  |    ^^^^^^^^^^^^^^^^^^^^^

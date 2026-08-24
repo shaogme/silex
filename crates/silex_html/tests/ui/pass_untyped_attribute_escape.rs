@@ -1,4 +1,4 @@
-use silex_dom::attribute::AttributeBuilder;
+use silex_view::attribute::AttributeBuilder;
 use silex_html::input;
 
 fn main() {

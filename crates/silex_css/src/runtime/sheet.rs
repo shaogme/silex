@@ -15,9 +15,15 @@ use crate::runtime::{
     platform::report,
 };
 use js_sys::Array;
-use silex_dom::prelude::*;
 use wasm_bindgen::{JsCast, JsValue};
-use web_sys::{CssStyleSheet, HtmlStyleElement};
+use web_sys::{CssStyleSheet, Document, HtmlStyleElement};
+
+fn document() -> Document {
+    web_sys::window()
+        .expect("CSS browser backend requires a window")
+        .document()
+        .expect("CSS browser backend requires a document")
+}
 
 /// 一张样式表。
 pub(crate) enum Sheet {

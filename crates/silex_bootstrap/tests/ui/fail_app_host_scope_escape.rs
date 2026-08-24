@@ -1,6 +1,6 @@
 use silex_bootstrap::AppHost;
 use silex_core::{OwnerAccess, Runtime, SilexResult};
-use silex_dom::MountContext;
+use silex_view::MountBuilderContext;
 
 #[allow(dead_code)]
 fn call_mount(
@@ -16,7 +16,7 @@ fn call_mount(
 
 #[allow(dead_code)]
 fn builder<'scope>(
-    ctx: &MountContext<'scope>,
+    ctx: &MountBuilderContext<'scope>,
     slot: &mut Option<OwnerAccess<'static>>,
 ) -> SilexResult<()> {
     *slot = Some(ctx.access());

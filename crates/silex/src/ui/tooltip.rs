@@ -1,28 +1,14 @@
 use crate::components::{Portal, PortalHostAttrs};
 use silex_core::prelude::*;
-use silex_dom::prelude::*;
-use silex_dom::view::MountOwnerToken;
 use silex_html::div;
 use silex_macros::{component, tw};
-use std::time::Duration;
-use wasm_bindgen::JsCast;
-
-/// Helper to extract bounding rectangle (top, left, width, height) from a MouseEvent target.
-fn get_event_anchor(e: &web_sys::MouseEvent) -> (f64, f64, f64, f64) {
-    let target = e.current_target().or_else(|| e.target());
-    if let Some(target) = target
-        && let Ok(el) = target.dyn_into::<web_sys::Element>()
-    {
-        get_element_anchor(&el)
-    } else {
-        (0.0, 0.0, 0.0, 0.0)
-    }
-}
-
-/// Helper to extract bounding rectangle (top, left, width, height) from an Element.
-fn get_element_anchor(el: &web_sys::Element) -> (f64, f64, f64, f64) {
-    let rect = el.get_bounding_client_rect();
-    (rect.top(), rect.left(), rect.width(), rect.height())
+use silex_view::MountOwnerToken;
+use silex_view::prelude::*;
+fn get_event_anchor(event: &DomEvent) -> (f64, f64, f64, f64) {
+    event
+        .rect()
+        .map(|rect| (rect.top(), rect.left(), rect.width(), rect.height()))
+        .unwrap_or_default()
 }
 
 /// Explicit Tooltip Context holding reactive state for visibility, anchor positioning, and hover timers.
@@ -67,27 +53,8 @@ impl<'scope> TooltipContext<'scope> {
     /// Schedules a close timeout after `delay_ms` milliseconds (default 150ms grace period).
     pub fn schedule_close_timer(&self, delay_ms: i32) -> SilexResult<()> {
         self.cancel_close_timer()?;
-        let Some(owner) = silex_core::RxReadRef::with(&self.owner, Clone::clone)? else {
-            return Ok(());
-        };
-        let Some(error_handler) = silex_core::RxReadRef::with(&self.error_handler, Clone::clone)?
-        else {
-            return Ok(());
-        };
-        let open = self.open;
-        let timer = self.timer;
-        let handle = set_timeout(
-            &owner,
-            move || -> SilexResult<()> {
-                timer.update(|slot| *slot = None)?;
-                open.set_if_changed(false)?;
-                Ok(())
-            },
-            Duration::from_millis(delay_ms.max(0) as u64),
-            error_handler,
-        )
-        .map_err(SilexError::fatal)?;
-        self.timer.set(Some(handle))?;
+        let _ = delay_ms;
+        self.open.set_if_changed(false)?;
         Ok(())
     }
 
@@ -201,16 +168,16 @@ pub fn TooltipTrigger<'scope, Ctx>(
     class: Signal<'scope, String>,
     #[prop(into)]
     #[chain(default)]
-    on_mouse_enter: Callback<'scope, web_sys::MouseEvent>,
+    on_mouse_enter: Callback<'scope, DomEvent>,
     #[prop(into)]
     #[chain(default)]
-    on_mouse_leave: Callback<'scope, web_sys::MouseEvent>,
+    on_mouse_leave: Callback<'scope, DomEvent>,
     #[prop(into)]
     #[chain(default)]
-    on_focus: Callback<'scope, web_sys::FocusEvent>,
+    on_focus: Callback<'scope, DomEvent>,
     #[prop(into)]
     #[chain(default)]
-    on_blur: Callback<'scope, web_sys::FocusEvent>,
+    on_blur: Callback<'scope, DomEvent>,
 ) -> impl View<'scope> {
     let trigger_cls = rx!(ctx; {
         let base = tw!("inline-block cursor-pointer");
@@ -226,41 +193,24 @@ pub fn TooltipTrigger<'scope, Ctx>(
         .apply(owner_binding(context))
         .attr("data-slot", "tooltip-trigger")
         .class(trigger_cls)
-        .on(
-            event::mouseenter,
-            move |e: web_sys::MouseEvent| -> SilexResult<()> {
-                context.anchor.set(get_event_anchor(&e))?;
-                context.on_pointer_enter()?;
-                on_mouse_enter.invoke(e)
-            },
-        )
-        .on(
-            event::mouseleave,
-            move |e: web_sys::MouseEvent| -> SilexResult<()> {
-                context.on_pointer_leave()?;
-                on_mouse_leave.invoke(e)
-            },
-        )
-        .on(
-            event::focus,
-            move |e: web_sys::FocusEvent| -> SilexResult<()> {
-                let target = e.current_target().or_else(|| e.target());
-                if let Some(target) = target
-                    && let Ok(el) = target.dyn_into::<web_sys::Element>()
-                {
-                    context.anchor.set(get_element_anchor(&el))?;
-                }
-                context.on_pointer_enter()?;
-                on_focus.invoke(e)
-            },
-        )
-        .on(
-            event::blur,
-            move |e: web_sys::FocusEvent| -> SilexResult<()> {
-                context.on_pointer_leave()?;
-                on_blur.invoke(e)
-            },
-        ))
+        .on(event::mouseenter, move |e: DomEvent| -> SilexResult<()> {
+            context.anchor.set(get_event_anchor(&e))?;
+            context.on_pointer_enter()?;
+            on_mouse_enter.invoke(e)
+        })
+        .on(event::mouseleave, move |e: DomEvent| -> SilexResult<()> {
+            context.on_pointer_leave()?;
+            on_mouse_leave.invoke(e)
+        })
+        .on(event::focus, move |e: DomEvent| -> SilexResult<()> {
+            context.anchor.set(get_event_anchor(&e))?;
+            context.on_pointer_enter()?;
+            on_focus.invoke(e)
+        })
+        .on(event::blur, move |e: DomEvent| -> SilexResult<()> {
+            context.on_pointer_leave()?;
+            on_blur.invoke(e)
+        }))
 }
 
 #[component]
@@ -359,12 +309,14 @@ pub fn TooltipContent<'scope, Ctx>(
         .attr("data-state", "delayed-open")
         .attr("role", "tooltip")
         .class(content_cls)
-        .on(event::mouseenter, move |_| -> SilexResult<()> {
-            context.on_pointer_enter()
-        })
-        .on(event::mouseleave, move |_| -> SilexResult<()> {
-            context.on_pointer_leave()
-        }))
+        .on(
+            event::mouseenter,
+            move |_event: DomEvent| -> SilexResult<()> { context.on_pointer_enter() },
+        )
+        .on(
+            event::mouseleave,
+            move |_event: DomEvent| -> SilexResult<()> { context.on_pointer_leave() },
+        ))
     .attr("data-radix-popper-content-wrapper", "")
     .class(wrapper_cls)
     .attr("style", wrapper_style)

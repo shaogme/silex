@@ -1,4 +1,5 @@
-use silex_router::{PathTail, RouteMatcher, RoutePath, dom::view::AnyView, macros::router};
+use silex_router::{PathTail, RouteMatcher, RoutePath, macros::router};
+use silex_view::AnyView;
 use std::error::Error;
 
 router! {

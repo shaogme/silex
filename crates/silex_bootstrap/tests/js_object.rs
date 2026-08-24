@@ -2,7 +2,8 @@
 
 use silex_bootstrap::{AppHost, JsAppHost};
 use silex_core::{Runtime, SilexError, SilexResult};
-use silex_dom::{CleanupSink, MountContext, element::Element};
+use silex_dom::CleanupSink;
+use silex_view::{Element, MountBuilderContext};
 use wasm_bindgen_test::*;
 use web_sys::Node;
 
@@ -38,15 +39,15 @@ fn clean_sink() -> CleanupSink {
     CleanupSink::new(|report| assert!(report.is_clean()))
 }
 
-fn mount_text<'scope>(ctx: &MountContext<'scope>) -> SilexResult<()> {
+fn mount_text<'scope>(ctx: &MountBuilderContext<'scope>) -> SilexResult<()> {
     let handler = ctx.access().error_handler(|_: SilexError| {})?;
-    ctx.mount(Element::with_child("section", "js-owner"), handler)
+    ctx.mount_unit(Element::with_child("section", "js-owner"), handler)
 }
 
 #[wasm_bindgen_test]
 fn js_wrapper_retains_the_mounted_owner_and_unmount_is_idempotent() {
     let target = target();
-    let mut host = AppHost::new(target.clone(), clean_sink());
+    let mut host = AppHost::from_web_sys(target.clone(), clean_sink()).expect("browser host");
     host.mount(Runtime::new(), mount_text)
         .expect("application should mount before JS transfer");
 

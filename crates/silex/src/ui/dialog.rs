@@ -1,11 +1,8 @@
 use crate::components::{Portal, PortalHostAttrs};
 use silex_core::prelude::*;
-use silex_dom::document;
-use silex_dom::prelude::*;
 use silex_html::{button, div};
 use silex_macros::{component, styled, tw};
-use wasm_bindgen::JsCast;
-use web_sys::{Element, HtmlElement};
+use silex_view::prelude::*;
 
 styled! {
     pub DialogHeader<'scope, Ctx><div>(#[ctx] ctx: Ctx, children: AnyView<'scope>) {
@@ -33,29 +30,27 @@ styled! {
 
 fn dialog_focus_binding<'scope>(
     open: Rx<'scope, bool>,
-    previous_focus: StoredValue<'scope, Option<Element>>,
+    previous_focus: StoredValue<'scope, Option<DomElement>>,
 ) -> AttrOp<'scope> {
     AttrOp::on_commit(move |element, context| {
         let dialog = element.clone();
+        let dom = context.dom().clone();
         context.owner().effect(
             EffectPhase::PostFlush,
             Box::new(move || -> SilexResult<()> {
                 if open.with(|value| *value)? {
                     if silex_core::RxReadRef::with(&previous_focus, |value| value.is_none())? {
-                        previous_focus.set(document().active_element())?;
+                        previous_focus.set(dom.active_element().ok().flatten())?;
                     }
-                    let dialog = dialog.dyn_ref::<HtmlElement>().ok_or_else(|| {
-                        SilexError::fatal(SilexErrorKind::Dom(
-                            "Dialog content must be an HTML element".to_string(),
-                        ))
+                    dom.focus(&dialog).map_err(|error| {
+                        SilexError::fatal(SilexErrorKind::Dom(error.to_string()))
                     })?;
-                    dialog.focus().map_err(SilexError::fatal)?;
                 } else if let Some(previous) =
                     silex_core::RxReadRef::with(&previous_focus, |value| value.clone())?
                 {
-                    if let Some(previous) = previous.dyn_ref::<HtmlElement>() {
-                        previous.focus().map_err(SilexError::fatal)?;
-                    }
+                    dom.focus(&previous).map_err(|error| {
+                        SilexError::fatal(SilexErrorKind::Dom(error.to_string()))
+                    })?;
                     previous_focus.set(None)?;
                 }
                 Ok(())
@@ -92,7 +87,7 @@ pub fn Dialog<'scope, Ctx>(
     })?;
 
     let stored_children = owner.stored(children)?;
-    let previous_focus = owner.stored(None::<Element>)?;
+    let previous_focus = owner.stored(None::<DomElement>)?;
 
     let portal = chain!(
         // Overlay 遮罩

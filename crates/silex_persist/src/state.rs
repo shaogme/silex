@@ -1,5 +1,6 @@
 use crate::backend::{BackendEvent, BackendSubscription};
 use crate::builder::PersistentBuilder;
+use crate::runtime::PersistTimer;
 use crate::runtime::{PersistRuntime, WriteOrigin, WriteRequest, WriteToken};
 use crate::{
     DecodePolicy, NoBackend, NoCodec, NoDefault, PersistenceError, PersistenceErrorKind,
@@ -12,7 +13,8 @@ use silex_core::{
     reactivity::{PromotionPlan, ReactiveSource, ReadSignal, Signal, StoredValue},
     traits::{RxBase, RxData, RxRead, RxReadRef, RxReadRefSource, RxValue, RxWrite},
 };
-use silex_dom::view::{MountContext, MountInstance, OwnedTimeout, View};
+use silex_view::attribute::{IntoStorable, ReactiveBinding};
+use silex_view::{MountContext, MountInstance, View};
 use std::rc::Rc;
 
 pub type PersistenceGetFn<'scope> =
@@ -101,6 +103,17 @@ impl<'scope, T> Copy for Persistent<'scope, T> {}
 impl<'scope, T> Persistent<'scope, T> {
     pub fn signal(&self) -> Signal<'scope, T> {
         self.value
+    }
+}
+
+impl<'scope, T> IntoStorable<'scope> for Persistent<'scope, T>
+where
+    T: ReactiveBinding<'scope> + Clone + 'scope,
+{
+    type Stored = Rx<'scope, T>;
+
+    fn into_storable(self) -> Self::Stored {
+        self.signal().into_rx()
     }
 }
 
@@ -335,7 +348,8 @@ where
         &self,
         context: &MountContext<'scope>,
     ) -> silex_core::SilexResult<MountInstance<'scope>> {
-        self.value.into_rx().mount(context)
+        let view = self.value.into_rx();
+        context.mount(&view)
     }
 }
 
@@ -464,9 +478,9 @@ where
     commit_request(controller, state, request.token, request.raw)
 }
 
-fn cancel_timer<'scope>(timer: Option<OwnedTimeout<'scope>>) -> Result<(), PersistenceError> {
+fn cancel_timer<'scope>(timer: Option<PersistTimer<'scope>>) -> Result<(), PersistenceError> {
     if let Some(timer) = timer {
-        timer.cancel().map_err(PersistenceError::from)?;
+        timer.cancel();
     }
     Ok(())
 }
@@ -661,7 +675,7 @@ pub(crate) fn take_controller_resources<'scope, T>(
     controller: StoredValue<'scope, PersistenceController<'scope, T>>,
 ) -> SilexResult<(
     Option<BackendSubscription<'scope>>,
-    Option<OwnedTimeout<'scope>>,
+    Option<PersistTimer<'scope>>,
 )> {
     controller.update_untracked(|controller| {
         let timer = controller.runtime.close();

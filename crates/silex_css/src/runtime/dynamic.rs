@@ -13,11 +13,14 @@ use crate::{
     types,
 };
 use silex_core::{EffectPhase, ErrorReporter, Rx, RxGet, SilexError, SilexErrorKind, SilexResult};
-use silex_dom::{
-    attribute::{ApplyTarget, ApplyToDom, AttrOp, IntoStorable},
-    view::{
-        MountContext, MountErrorHandler, MountInstance, MountOwner, MountOwnerToken, MountState,
-        View,
+use silex_dom::{DomContext, DomElement};
+use silex_view::{
+    AttrOp as ViewAttrOp, MountContext as ViewMountContext,
+    MountErrorHandler as ViewMountErrorHandler, MountInstance as ViewMountInstance,
+    MountOwnerToken as ViewMountOwnerToken, MountState as ViewMountState, View as ViewTrait,
+    attribute::{
+        ApplyTarget as ViewApplyTarget, ApplyToDom as ViewApplyToDom,
+        IntoStorable as ViewIntoStorable, update_class_tokens,
     },
 };
 use std::{
@@ -26,8 +29,6 @@ use std::{
     fmt::Display,
     rc::{Rc, Weak},
 };
-use wasm_bindgen::JsCast;
-use web_sys::{Element, HtmlElement, SvgElement};
 
 pub type CssVariableGetter<'scope> = Rx<'scope, String>;
 
@@ -397,181 +398,164 @@ impl<'scope> DynamicCss<'scope> {
         self.rules.push((parts, exprs));
         self
     }
+}
 
-    fn apply_to_element(
+impl<'scope> ViewApplyToDom<'scope> for DynamicCss<'scope> {
+    fn apply(
         &self,
-        el: &Element,
-        owner: &dyn MountOwner<'scope>,
-        error_handler: MountErrorHandler<'scope>,
+        element: &DomElement,
+        _target: ViewApplyTarget,
+        context: &ViewMountContext<'scope>,
     ) -> SilexResult<()> {
-        let token = owner.token();
-
+        let dom = context.dom().clone();
+        let owner = context.owner();
         for (style_id, css) in &self.static_styles {
             let rendered = render_static_template(css, &self.static_values);
             crate::inject_style(style_id, &rendered);
         }
-
-        el.class_list()
-            .add_1(self.class_name)
-            .map_err(SilexError::fatal)?;
+        dom.set_attribute(silex_dom::attribute::AttributeRequest::new(
+            element,
+            silex_dom::attribute::AttributeTarget::Class,
+            silex_dom::attribute::AttributeValue::ClassTokens {
+                add: vec![self.class_name.to_string()],
+                remove: Vec::new(),
+            },
+        ))
+        .map_err(|error| SilexError::fatal(SilexErrorKind::Dom(error.to_string())))?;
 
         if !self.vars.is_empty() {
             let vars = self.vars.clone();
             let vars_for_effect = vars.clone();
-            let el_clone = el.clone();
-            token.effect_with_previous(EffectPhase::Normal, Box::new(
-                    move |previous: Option<&Vec<Option<String>>>| -> SilexResult<
-                        Vec<Option<String>>,
-                    > {
-                        let values: Vec<String> = vars_for_effect
-                            .iter()
-                            .map(|(_, getter)| getter.get())
-                            .collect::<SilexResult<_>>()?;
-                        if let Some(style) = element_style(&el_clone) {
-                            for (index, ((name, _), value)) in
-                                vars_for_effect.iter().zip(values.iter()).enumerate()
-                            {
-                                let old_value = previous
-                                    .and_then(|values| values.get(index))
-                                    .and_then(Option::as_deref);
-                                if old_value != Some(value.as_str()) {
-                                    style.set_property(name, value).map_err(SilexError::fatal)?;
-                                }
-                            }
-                        }
-                        Ok(values.into_iter().map(Some).collect())
-                    },
-                ),
-                error_handler,
-            )?;
-
-            let names: Vec<&'static str> = vars.iter().map(|(name, _)| *name).collect();
-            let el_clone = el.clone();
-            owner.on_cleanup(
-                Box::new(move || -> SilexResult<()> {
-                    let mut first_error = None;
-                    if let Some(style) = element_style(&el_clone) {
-                        for name in names {
-                            if let Err(error) = style.remove_property(name) {
-                                first_error.get_or_insert_with(|| SilexError::fatal(error));
-                            }
+            let element_for_effect = element.clone();
+            let dom_for_effect = dom.clone();
+            owner.effect_with_previous(
+                EffectPhase::Normal,
+                Box::new(move |previous: Option<&Vec<Option<String>>>| {
+                    let values = vars_for_effect
+                        .iter()
+                        .map(|(_, getter)| getter.get())
+                        .collect::<SilexResult<Vec<_>>>()?;
+                    for (index, ((name, _), value)) in
+                        vars_for_effect.iter().zip(values.iter()).enumerate()
+                    {
+                        let old_value = previous
+                            .and_then(|values| values.get(index))
+                            .and_then(Option::as_deref);
+                        if old_value != Some(value.as_str()) {
+                            dom_for_effect
+                                .set_style_property(&element_for_effect, name, Some(value))
+                                .map_err(|error| {
+                                    SilexError::fatal(SilexErrorKind::Dom(error.to_string()))
+                                })?;
                         }
                     }
-                    first_error.map_or(Ok(()), Err)
+                    Ok(values.into_iter().map(Some).collect())
                 }),
-                error_handler,
+                context.error_handler(),
+            )?;
+
+            let names = vars.iter().map(|(name, _)| *name).collect::<Vec<_>>();
+            let element_for_cleanup = element.clone();
+            let dom_for_cleanup = dom.clone();
+            owner.on_cleanup(
+                Box::new(move || {
+                    for name in names {
+                        dom_for_cleanup
+                            .set_style_property(&element_for_cleanup, name, None)
+                            .map_err(|error| {
+                                SilexError::fatal(SilexErrorKind::Dom(error.to_string()))
+                            })?;
+                    }
+                    Ok(())
+                }),
+                context.error_handler(),
             )?;
         }
 
-        let static_values = self.static_values.clone();
         for (parts, getters) in self.rules.clone() {
             let manager = Rc::new(DynamicStyleManager::new());
             let manager_for_effect = manager.clone();
-            let current_class = token.owner_state(None::<String>)?;
+            let current_class = owner.owner_state(None::<String>)?;
             let current_class_for_effect = current_class.clone();
-            let el_clone = el.clone();
+            let element_for_effect = element.clone();
+            let dom_for_effect = dom.clone();
             let base_class = self.class_name;
             let layer = self.layer;
-            let static_values_for_effect = static_values.clone();
-            token.effect_with_previous(
+            let static_values = self.static_values.clone();
+            owner.effect_with_previous(
                 EffectPhase::Normal,
-                Box::new(move |previous: Option<&String>| -> SilexResult<String> {
-                    let current_vals: Vec<String> = getters
+                Box::new(move |previous: Option<&String>| {
+                    let values = getters
                         .iter()
                         .map(|getter| getter.get())
-                        .collect::<SilexResult<_>>()?;
-                    let dyn_class = dynamic_class_with_static(
-                        base_class,
-                        parts,
-                        &current_vals,
-                        &static_values_for_effect,
-                    );
-                    if previous.is_some_and(|class| class == &dyn_class) {
-                        return Ok(dyn_class);
+                        .collect::<SilexResult<Vec<_>>>()?;
+                    let next_class =
+                        dynamic_class_with_static(base_class, parts, &values, &static_values);
+                    if previous.is_some_and(|class| class == &next_class) {
+                        return Ok(next_class);
                     }
-
-                    let rule = render_layered_selector(
-                        layer,
-                        parts,
-                        &dyn_class,
-                        &current_vals,
-                        &static_values_for_effect,
-                    );
-                    if !manager_for_effect.update(&dyn_class, &rule) {
+                    let rule =
+                        render_layered_selector(layer, parts, &next_class, &values, &static_values);
+                    if !manager_for_effect.update(&next_class, &rule) {
                         return Err(SilexError::fatal(SilexErrorKind::Dom(
                             "无法更新动态样式表".to_string(),
                         )));
                     }
-                    el_clone
-                        .class_list()
-                        .add_1(&dyn_class)
-                        .map_err(SilexError::fatal)?;
-                    if let Some(old_class) = previous {
-                        el_clone
-                            .class_list()
-                            .remove_1(old_class)
-                            .map_err(SilexError::fatal)?;
-                    }
-                    current_class_for_effect.update(|class| *class = Some(dyn_class.clone()))?;
-                    Ok(dyn_class)
+                    update_class_tokens(
+                        &dom_for_effect,
+                        &element_for_effect,
+                        std::iter::once(next_class.clone()),
+                        previous.into_iter().cloned(),
+                    )?;
+                    current_class_for_effect.update(|class| *class = Some(next_class.clone()))?;
+                    Ok(next_class)
                 }),
-                error_handler,
+                context.error_handler(),
             )?;
 
             let manager_for_cleanup = manager.clone();
             let current_class_for_cleanup = current_class.clone();
-            let el_clone = el.clone();
+            let element_for_cleanup = element.clone();
+            let dom_for_cleanup = dom.clone();
             owner.on_cleanup(
-                Box::new(move || -> SilexResult<()> {
-                    let mut first_error = None;
-                    if let Some(class_name) = current_class_for_cleanup.take_for_cleanup().flatten()
-                        && let Err(error) = el_clone.class_list().remove_1(&class_name)
-                    {
-                        first_error = Some(SilexError::fatal(error));
-                    }
+                Box::new(move || {
+                    let class = current_class_for_cleanup.take_for_cleanup().flatten();
                     manager_for_cleanup.dispose();
-                    first_error.map_or(Ok(()), Err)
+                    if let Some(class) = class {
+                        update_class_tokens(
+                            &dom_for_cleanup,
+                            &element_for_cleanup,
+                            std::iter::empty(),
+                            std::iter::once(class),
+                        )?;
+                    }
+                    Ok(())
                 }),
-                error_handler,
+                context.error_handler(),
             )?;
         }
 
-        let class_name = self.class_name;
-        let el_clone = el.clone();
+        let class_name = self.class_name.to_string();
+        let element_for_cleanup = element.clone();
+        let dom_for_cleanup = dom;
         owner.on_cleanup(
-            Box::new(move || -> SilexResult<()> {
-                el_clone
-                    .class_list()
-                    .remove_1(class_name)
-                    .map_err(SilexError::fatal)
+            Box::new(move || {
+                update_class_tokens(
+                    &dom_for_cleanup,
+                    &element_for_cleanup,
+                    std::iter::empty(),
+                    std::iter::once(class_name),
+                )
             }),
-            error_handler,
+            context.error_handler(),
         )?;
         Ok(())
     }
 }
 
-impl<'scope> ApplyToDom<'scope> for DynamicCss<'scope> {
-    fn apply(
-        &self,
-        el: &Element,
-        _target: ApplyTarget,
-        context: &MountContext<'scope>,
-    ) -> SilexResult<()> {
-        let owner = context.owner();
-        self.apply_to_element(el, &owner, context.error_handler())
-    }
-
-    fn into_op(self, _target: ApplyTarget) -> AttrOp<'scope> {
-        AttrOp::on_commit(move |el, context| {
-            let owner = context.owner();
-            self.apply_to_element(el, &owner, context.error_handler())
-        })
-    }
-}
-
-impl<'scope> IntoStorable<'scope> for DynamicCss<'scope> {
+impl<'scope> ViewIntoStorable<'scope> for DynamicCss<'scope> {
     type Stored = Self;
+
     fn into_storable(self) -> Self::Stored {
         self
     }
@@ -678,19 +662,21 @@ impl<'scope> StyledVariantBinding<'scope> {
         self
     }
 
-    pub fn into_op(self) -> AttrOp<'scope> {
-        AttrOp::on_commit(move |element, context| {
-            let owner = context.owner();
-            self.mount_to_element(element, &owner, context.error_handler())
-        })
+    /// 将 styled 动态绑定接入 backend-neutral View attribute pipeline。
+    ///
+    /// CSSOM/style-sheet backend 仍由本 crate 管理；这里只把元素 class 的
+    /// 增删和 owner 生命周期交给 `silex_view`，避免生成代码重新暴露旧 View
+    /// 或 `web_sys::Element` 类型。
+    pub fn into_view_op(self) -> ViewAttrOp<'scope> {
+        ViewAttrOp::on_commit(move |element, context| self.mount_to_view_element(element, context))
     }
 
-    fn mount_to_element(
+    fn mount_to_view_element(
         &self,
-        element: &Element,
-        owner: &MountOwnerToken<'scope>,
-        error_handler: MountErrorHandler<'scope>,
+        element: &DomElement,
+        context: &ViewMountContext<'scope>,
     ) -> SilexResult<()> {
+        let owner = context.owner();
         owner.with_runtime(|| {
             for getter in &self.property_getters {
                 getter.get()?;
@@ -717,6 +703,7 @@ impl<'scope> StyledVariantBinding<'scope> {
         let rules = self.rules.clone();
         let groups = self.groups.clone();
         let layer = self.layer;
+        let dom = context.dom().clone();
         let states = owner.owner_state(
             (0..rules.len())
                 .map(|_| StyledRuleState {
@@ -729,6 +716,7 @@ impl<'scope> StyledVariantBinding<'scope> {
         let states_for_effect = states.clone();
         let variant_classes_for_effect = variant_classes.clone();
         let element_for_effect = element.clone();
+        let dom_for_effect = dom.clone();
         owner.effect(
             EffectPhase::Normal,
             Box::new(move || -> SilexResult<()> {
@@ -736,13 +724,15 @@ impl<'scope> StyledVariantBinding<'scope> {
                     .iter()
                     .map(|group| group.source.get().map(|value| value.to_lowercase()))
                     .collect::<Result<_, _>>()?;
-                update_styled_variant_classes(
+                update_view_styled_variant_classes(
+                    &dom_for_effect,
                     &element_for_effect,
                     &groups,
                     &active_variants,
                     &variant_classes_for_effect,
                 )?;
-                update_styled_dynamic_rules(
+                update_view_styled_dynamic_rules(
+                    &dom_for_effect,
                     &element_for_effect,
                     &rules,
                     layer,
@@ -751,44 +741,47 @@ impl<'scope> StyledVariantBinding<'scope> {
                 )?;
                 Ok(())
             }),
-            error_handler,
+            context.error_handler(),
         )?;
 
         let element_for_cleanup = element.clone();
+        let dom_for_cleanup = dom;
         owner.on_cleanup(
-            Box::new(move || -> SilexResult<()> {
-                let mut first_error = None;
+            Box::new(move || {
                 let mut classes = variant_classes.take_for_cleanup().unwrap_or_default();
-                for class in classes.iter_mut().filter_map(Option::take) {
-                    if let Err(error) = element_for_cleanup.class_list().remove_1(class) {
-                        first_error.get_or_insert_with(|| SilexError::fatal(error));
-                    }
-                }
-
+                let mut remove = classes
+                    .iter_mut()
+                    .filter_map(Option::take)
+                    .map(str::to_owned)
+                    .collect::<Vec<_>>();
                 let mut states = states.take_for_cleanup().unwrap_or_default();
-                for state in states.iter_mut() {
-                    if let Some(class) = state.current_class.take()
-                        && let Err(error) = element_for_cleanup.class_list().remove_1(&class)
-                    {
-                        first_error.get_or_insert_with(|| SilexError::fatal(error));
+                for state in &mut states {
+                    if let Some(class) = state.current_class.take() {
+                        remove.push(class);
                     }
                     if let Some(manager) = &state.manager {
                         manager.dispose();
                     }
                 }
-                first_error.map_or(Ok(()), Err)
+                update_class_tokens(
+                    &dom_for_cleanup,
+                    &element_for_cleanup,
+                    std::iter::empty(),
+                    remove,
+                )
             }),
-            error_handler,
+            context.error_handler(),
         )?;
         Ok(())
     }
 }
 
-fn update_styled_variant_classes(
-    element: &Element,
+fn update_view_styled_variant_classes(
+    dom: &DomContext,
+    element: &DomElement,
     groups: &[StyledVariantGroup<'_>],
     active_variants: &[String],
-    current_classes: &MountState<'_, Vec<Option<&'static str>>>,
+    current_classes: &ViewMountState<'_, Vec<Option<&'static str>>>,
 ) -> SilexResult<()> {
     current_classes.update(|current_classes| {
         for (index, group) in groups.iter().enumerate() {
@@ -804,31 +797,28 @@ fn update_styled_variant_classes(
             if current_classes[index] == next_class {
                 continue;
             }
-            if let Some(next_class) = next_class {
-                element
-                    .class_list()
-                    .add_1(next_class)
-                    .map_err(SilexError::fatal)?;
-            }
-            let old_class = current_classes[index];
+            let add = next_class
+                .into_iter()
+                .map(str::to_owned)
+                .collect::<Vec<_>>();
+            let remove = current_classes[index]
+                .into_iter()
+                .map(str::to_owned)
+                .collect::<Vec<_>>();
+            update_class_tokens(dom, element, add, remove)?;
             current_classes[index] = next_class;
-            if let Some(old_class) = old_class {
-                element
-                    .class_list()
-                    .remove_1(old_class)
-                    .map_err(SilexError::fatal)?;
-            }
         }
         Ok(())
     })?
 }
 
-fn update_styled_dynamic_rules(
-    element: &Element,
+fn update_view_styled_dynamic_rules(
+    dom: &DomContext,
+    element: &DomElement,
     rules: &[StyledDynamicRule<'_>],
     layer: &'static str,
     active_variants: &[String],
-    states: &MountState<'_, Vec<StyledRuleState>>,
+    states: &ViewMountState<'_, Vec<StyledRuleState>>,
 ) -> SilexResult<()> {
     for (index, rule) in rules.iter().enumerate() {
         let active = match (rule.variant_group, rule.variant_key) {
@@ -848,10 +838,7 @@ fn update_styled_dynamic_rules(
                 state.current_class.take()
             })?;
             if let Some(old_class) = old_class {
-                element
-                    .class_list()
-                    .remove_1(&old_class)
-                    .map_err(SilexError::fatal)?;
+                update_class_tokens(dom, element, std::iter::empty(), std::iter::once(old_class))?;
             }
             continue;
         }
@@ -881,17 +868,8 @@ fn update_styled_dynamic_rules(
         if old_class.as_deref() == Some(next_class.as_str()) {
             continue;
         }
-        element
-            .class_list()
-            .add_1(&next_class)
-            .map_err(SilexError::fatal)?;
-        states.update(|states| states[index].current_class = Some(next_class.clone()))?;
-        if let Some(old_class) = old_class {
-            element
-                .class_list()
-                .remove_1(&old_class)
-                .map_err(SilexError::fatal)?;
-        }
+        update_class_tokens(dom, element, std::iter::once(next_class.clone()), old_class)?;
+        states.update(|states| states[index].current_class = Some(next_class))?;
     }
     Ok(())
 }
@@ -983,8 +961,10 @@ impl<'scope> GlobalStyleView<'scope> {
             bindings,
         }
     }
+}
 
-    fn mount_inner(&self, context: &MountContext<'scope>) -> SilexResult<MountInstance<'scope>> {
+impl<'scope> ViewTrait<'scope> for GlobalStyleView<'scope> {
+    fn mount(&self, context: &ViewMountContext<'scope>) -> SilexResult<ViewMountInstance<'scope>> {
         let owner = context.owner();
         let static_styles = self.static_styles.clone();
         let bindings = self.bindings.clone();
@@ -998,7 +978,7 @@ impl<'scope> GlobalStyleView<'scope> {
 
             for binding in &bindings {
                 let style_id = unique_dynamic_style_id(binding.style_id);
-                inject_managed_dynamic_style(
+                inject_managed_dynamic_style_view(
                     &owner,
                     error_handler,
                     ManagedDynamicStyle {
@@ -1014,13 +994,7 @@ impl<'scope> GlobalStyleView<'scope> {
             }
             Ok(())
         })?;
-        Ok(MountInstance::from_nodes(Vec::new()))
-    }
-}
-
-impl<'scope> View<'scope> for GlobalStyleView<'scope> {
-    fn mount(&self, context: &MountContext<'scope>) -> SilexResult<MountInstance<'scope>> {
-        self.mount_inner(context)
+        Ok(ViewMountInstance::from_nodes(Vec::new()))
     }
 }
 
@@ -1089,9 +1063,11 @@ fn render_layered_selector(
 /// - `replacements`：具名的 `var(--slx-dyn-N)`，用于**声明值**里的片段。这段
 ///   模板要先过一遍 lightningcss，位置信息在那之后不复存在，只能按文本找；但
 ///   替换是一遍扫描完成的，写进去的值不会再被当成占位符。
-pub fn inject_managed_dynamic_style<'scope>(
-    owner: &dyn MountOwner<'scope>,
-    error_handler: MountErrorHandler<'scope>,
+///
+/// 新 View owner 的同构动态全局样式绑定入口。
+pub fn inject_managed_dynamic_style_view<'scope>(
+    owner: &ViewMountOwnerToken<'scope>,
+    error_handler: ViewMountErrorHandler<'scope>,
     style: ManagedDynamicStyle<'scope>,
 ) -> SilexResult<()> {
     let ManagedDynamicStyle {
@@ -1123,7 +1099,6 @@ pub fn inject_managed_dynamic_style<'scope>(
                     .iter()
                     .map(|getter| getter.get())
                     .collect::<SilexResult<_>>()?;
-                // 全局样式没有组件类名，`CssPart::Class` 不会出现在这类模板里
                 let res = render_selector_with_static(parts, "", &vals, &static_values);
                 let mut pairs = static_replacements
                     .iter()
@@ -1163,12 +1138,6 @@ pub fn inject_managed_dynamic_style<'scope>(
         )
         .inspect_err(|_| manager.dispose())?;
     Ok(())
-}
-
-fn element_style(el: &Element) -> Option<web_sys::CssStyleDeclaration> {
-    el.dyn_ref::<HtmlElement>()
-        .map(|element| element.style())
-        .or_else(|| el.dyn_ref::<SvgElement>().map(|element| element.style()))
 }
 
 pub(crate) fn unique_dynamic_style_id(prefix: &str) -> String {

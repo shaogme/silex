@@ -5,6 +5,7 @@ use silex::reexports::wasm_bindgen::JsCast;
 use silex::reexports::web_sys::{self, Document, Element as DomElement, HtmlElement, Node};
 use silex_ui_example::mount_ui_into;
 use wasm_bindgen_test::*;
+use web_sys::{PointerEvent, PointerEventInit};
 
 wasm_bindgen_test_configure!(run_in_browser);
 
@@ -134,6 +135,20 @@ fn dispatch_input(input: &web_sys::HtmlInputElement, event_name: &str) {
     input
         .dispatch_event(&web_sys::Event::new(event_name).expect("input event can be created"))
         .expect("input event should dispatch");
+}
+
+fn dispatch_pointer_event(element: &DomElement, name: &str, client_x: f64) {
+    let init = PointerEventInit::new();
+    init.set_bubbles(true);
+    init.set_cancelable(true);
+    init.set_client_x(client_x.round() as i32);
+    init.set_pointer_id(1);
+    init.set_button(0);
+    let event =
+        PointerEvent::new_with_event_init_dict(name, &init).expect("pointer event can be created");
+    element
+        .dispatch_event(&event)
+        .expect("pointer event should dispatch");
 }
 
 fn radio_state(target: &DomElement) -> String {
@@ -409,6 +424,56 @@ async fn ui_showcase_mounts_and_updates_interactive_components() {
     assert_eq!(app.child_nodes().length(), 0);
     host.unmount()
         .expect("repeated unmount should remain idempotent");
+    clear_theme_storage();
+    detach(&app.into());
+}
+
+#[wasm_bindgen_test(async)]
+async fn ui_slider_uses_track_geometry_for_clicks_and_dragging() {
+    clear_theme_storage();
+    let app = target("ui-slider-regression");
+    let mut host = mount_ui_into(app.clone().into()).expect("UI showcase should mount");
+    let slider = app
+        .query_selector("[data-slot='slider']")
+        .expect("slider query should succeed")
+        .expect("slider should exist");
+    slider
+        .dyn_ref::<web_sys::HtmlElement>()
+        .expect("slider should be an HTML element")
+        .style()
+        .set_property("width", "400px")
+        .expect("slider width should be set");
+    flush_browser_tasks().await;
+
+    let track = slider
+        .query_selector("[data-slot='slider-track']")
+        .expect("track query should succeed")
+        .expect("track should exist");
+    let range = slider
+        .query_selector("[data-slot='slider-range']")
+        .expect("range query should succeed")
+        .expect("range should exist");
+    let thumb = slider
+        .query_selector("[data-slot='slider-thumb']")
+        .expect("thumb query should succeed")
+        .expect("thumb should exist");
+    let rect = slider.get_bounding_client_rect();
+    assert!(rect.width() > 0.0, "slider should have a measurable width");
+
+    dispatch_pointer_event(&range, "pointerdown", rect.left() + rect.width() * 0.4);
+    dispatch_pointer_event(&range, "pointerup", rect.left() + rect.width() * 0.4);
+    flush_browser_tasks().await;
+    assert!(app_text(&app).contains("40%"));
+
+    dispatch_pointer_event(&track, "pointerdown", rect.left() + rect.width() * 0.65);
+    flush_browser_tasks().await;
+    dispatch_pointer_event(&thumb, "pointerdown", rect.left() + rect.width() * 0.65);
+    dispatch_pointer_event(&thumb, "pointermove", rect.left() + rect.width() * 0.3);
+    dispatch_pointer_event(&thumb, "pointerup", rect.left() + rect.width() * 0.3);
+    flush_browser_tasks().await;
+    assert!(app_text(&app).contains("30%"));
+
+    host.unmount().expect("UI showcase should unmount");
     clear_theme_storage();
     detach(&app.into());
 }

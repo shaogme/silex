@@ -9,6 +9,7 @@ pub mod routes;
 
 use advanced::UserSettingsStore;
 use silex::bootstrap::{BootstrapError, BrowserBootstrap, JsAppHost};
+use silex::dom::CleanupSink;
 use silex::prelude::*;
 use silex::reexports::*;
 
@@ -128,12 +129,12 @@ pub fn mount_showcase() -> Result<JsAppHost, BootstrapError> {
 
 /// Mount the showcase into a caller-provided target node.
 pub fn mount_showcase_into(target: web_sys::Node) -> Result<JsAppHost, BootstrapError> {
-    let mut bootstrap = BrowserBootstrap::new(target, CleanupSink::console());
+    let mut bootstrap = BrowserBootstrap::from_web_sys(target, CleanupSink::console())?;
     bootstrap.mount(Runtime::new(), mount_showcase_view)?;
     bootstrap.into_js_host()
 }
 
-fn mount_showcase_view<'scope>(ctx: &MountContext<'scope>) -> SilexResult<()> {
+fn mount_showcase_view<'scope>(ctx: &MountBuilderContext<'scope>) -> SilexResult<()> {
     let owner = ctx.access();
     let error_handler_token = owner.error_handler(|error: SilexError| {
         web_sys::console::error_1(&error.to_string().into());
@@ -207,7 +208,7 @@ fn mount_showcase_view<'scope>(ctx: &MountContext<'scope>) -> SilexResult<()> {
         .build()?;
     let store = UserSettingsStore::from_handles(owner, theme, notifications, username)?;
 
-    ctx.mount(
+    ctx.mount_unit(
         App(SilexContext::new(owner, error_handler), i18n, store).build(),
         error_handler,
     )

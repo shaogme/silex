@@ -1,11 +1,11 @@
 pub mod callback;
 pub mod context;
 pub mod error;
-pub mod log;
 pub mod logic;
 pub mod node_ref;
 mod owner;
 pub mod reactivity;
+pub mod scoped_slot;
 pub mod store;
 mod task;
 pub mod traits;
@@ -35,14 +35,6 @@ pub use error::{NetConnectionState, NetError, NetErrorKind};
 #[cfg(feature = "error-intl")]
 pub use error::{IntlError, IntlErrorKind};
 
-#[cfg(feature = "error-dom")]
-pub use error::{
-    CleanupFailure, CleanupFailureDiagnostic, CleanupOrigin, CleanupReport, CleanupSink,
-    DisposeError, DropFailureReport, MountAvailability, MountError, RollbackError,
-};
-
-#[cfg(feature = "error-bootstrap")]
-pub use error::{AppHostError, BootstrapError, HostState, UnmountOutcome};
 pub use node_ref::NodeRef;
 pub use owner::{OwnerAccess, OwnerChild, OwnerCleanupRegistrationError, OwnerHandle, Runtime};
 pub use reactivity::{
@@ -51,6 +43,7 @@ pub use reactivity::{
     ResourceBuilder, ResourceFetchBuilder, ResourceSource, ResourceSourceBuilder, Rx, RxReadGuard,
     Signal, StoredValue, SuspenseContext, Transaction, WatchOptions, WriteGuard, WriteSignal,
 };
+pub use scoped_slot::ScopedSlot;
 #[cfg(feature = "test-support")]
 pub use silex_reactivity::RuntimeSnapshot;
 pub use silex_reactivity::{CallbackInvokeError, CompletionSubmitError};
@@ -147,8 +140,8 @@ pub mod prelude {
     pub use crate::{
         Callback, CompletionOnce, CompletionSender, ErrorHandler, ErrorHandlerInput,
         ErrorHandlerToken, ErrorReporter, NodeRef, OwnerAccess, OwnerHandle, ReactiveError,
-        Runtime, Rx, SilexContext, SilexContextProvider, SilexError, SilexErrorKind, SilexResult,
-        StoreField, Transaction, batch_read, batch_read_untracked, logic::*, reactivity::*, rx,
-        traits::*, unwind_safe,
+        Runtime, Rx, ScopedSlot, SilexContext, SilexContextProvider, SilexError, SilexErrorKind,
+        SilexResult, StoreField, Transaction, batch_read, batch_read_untracked, logic::*,
+        reactivity::*, rx, traits::*, unwind_safe,
     };
 }

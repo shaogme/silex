@@ -4,7 +4,6 @@ include!("../../src/lib.rs");
 
 use silex_macros::{css, global, styled, theme};
 use silex_css::types::Hex;
-use silex_dom::attribute::{AttributeBuilder, GlobalAttributes};
 
 theme! {
     pub struct StaticTheme {
@@ -33,7 +32,7 @@ global! {
 styled! {
     pub StaticStyled<'owner><div>(
         #[ctx] ctx: silex_core::SilexContext<'owner>,
-        children: silex_dom::view::AnyView<'owner>,
+        children: silex_view::AnyView<'owner>,
     ) {
         color: $(static StaticTheme::PRIMARY);
     }
@@ -42,7 +41,7 @@ styled! {
 styled! {
     pub MixedStyled<'owner><div>(
         #[ctx] ctx: silex_core::SilexContext<'owner>,
-        children: silex_dom::view::AnyView<'owner>,
+        children: silex_view::AnyView<'owner>,
         color: silex_core::reactivity::Rx<'owner, Hex>,
     ) {
         color: $(static StaticTheme::PRIMARY);

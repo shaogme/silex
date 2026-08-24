@@ -1,27 +1,25 @@
-error[E0599]: the method `scope` exists for struct `silex_dom::element::TypedElement<'_, Td>`, but its trait bounds were not satisfied
+error[E0599]: the method `scope` exists for struct `silex_view::element::TypedElement<'_, Td>`, but its trait bounds were not satisfied
  --> tests/ui/fail_table_header_on_td.rs:4:20
   |
 4 |     let _ = td(()).scope("col");
-  |                    ^^^^^ method cannot be called on `silex_dom::element::TypedElement<'_, Td>` due to unsatisfied trait bounds
+  |                    ^^^^^ method cannot be called on `silex_view::element::TypedElement<'_, Td>` due to unsatisfied trait bounds
   |
- ::: $WORKSPACE/crates/silex_dom/src/element/tags.rs
+ ::: $WORKSPACE/crates/silex_view/src/element.rs
   |
   |         pub struct $struct_name;
-  |         ------------------------ doesn't satisfy `Td: silex_dom::element::tags::TableHeaderTag`
-  |
- ::: $WORKSPACE/crates/silex_dom/src/element.rs
-  |
+  |         ------------------------ doesn't satisfy `Td: silex_view::element::TableHeaderTag`
+...
   | pub struct TypedElement<'scope, T: Tag> {
   | --------------------------------------- doesn't satisfy `_: TableHeaderAttributes<'_>`
   |
   = note: the following trait bounds were not satisfied:
-          `Td: silex_dom::element::tags::TableHeaderTag`
-          which is required by `silex_dom::element::TypedElement<'_, Td>: TableHeaderAttributes<'_>`
-          `&silex_dom::element::TypedElement<'_, Td>: silex_dom::attribute::AttributeBuilder<'_>`
-          which is required by `&silex_dom::element::TypedElement<'_, Td>: TableHeaderAttributes<'_>`
-          `&silex_dom::element::TypedElement<'_, Td>: HtmlTagCarrier`
-          which is required by `&silex_dom::element::TypedElement<'_, Td>: TableHeaderAttributes<'_>`
-          `&mut silex_dom::element::TypedElement<'_, Td>: silex_dom::attribute::AttributeBuilder<'_>`
-          which is required by `&mut silex_dom::element::TypedElement<'_, Td>: TableHeaderAttributes<'_>`
-          `&mut silex_dom::element::TypedElement<'_, Td>: HtmlTagCarrier`
-          which is required by `&mut silex_dom::element::TypedElement<'_, Td>: TableHeaderAttributes<'_>`
+          `Td: silex_view::element::TableHeaderTag`
+          which is required by `silex_view::element::TypedElement<'_, Td>: TableHeaderAttributes<'_>`
+          `&silex_view::element::TypedElement<'_, Td>: silex_view::attribute::AttributeBuilder<'_>`
+          which is required by `&silex_view::element::TypedElement<'_, Td>: TableHeaderAttributes<'_>`
+          `&silex_view::element::TypedElement<'_, Td>: HtmlTagCarrier`
+          which is required by `&silex_view::element::TypedElement<'_, Td>: TableHeaderAttributes<'_>`
+          `&mut silex_view::element::TypedElement<'_, Td>: silex_view::attribute::AttributeBuilder<'_>`
+          which is required by `&mut silex_view::element::TypedElement<'_, Td>: TableHeaderAttributes<'_>`
+          `&mut silex_view::element::TypedElement<'_, Td>: HtmlTagCarrier`
+          which is required by `&mut silex_view::element::TypedElement<'_, Td>: TableHeaderAttributes<'_>`

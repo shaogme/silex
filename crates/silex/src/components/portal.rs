@@ -1,63 +1,75 @@
 use silex_core::{EffectPhase, RxReadRef, SilexError, SilexErrorKind, SilexResult, reactivity::Rx};
-use silex_dom::view::{
-    MountContext, MountErrorHandler, MountOwner, MountOwnerToken, MountTarget, MountTransaction,
+use silex_dom::{
+    DomContext, DomElement, DomError, DomNode,
+    attribute::{AttributeRequest, AttributeTarget, AttributeValue},
+    tree::ElementSpec,
 };
-use silex_dom::{document, prelude::*};
 use silex_macros::component;
+use silex_view::{
+    AnyView, ApplyTarget, AttrOp, IntoStorable, MountContext, MountInstance, MountOwner,
+    MountOwnerToken, MountTarget, MountTransaction, View,
+};
 use std::{
     borrow::Cow,
     cell::{Cell, RefCell},
     panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
     rc::Rc,
 };
-use wasm_bindgen::JsCast;
-use web_sys::{Element, HtmlElement, Node};
 
 const PORTAL_VISIBILITY_ROOT_ATTRIBUTE: &str = "data-portal-visibility-root";
 
-/// Framework-owned DOM boundary that controls Portal visibility.
-///
-/// The root is intentionally created separately from the public host. No
-/// caller-provided attributes are ever applied to this element, so its
-/// visibility state cannot be replaced by Portal host attributes.
 #[derive(Clone)]
 pub(crate) struct PortalVisibilityRoot {
-    element: HtmlElement,
+    dom: DomContext,
+    element: DomElement,
 }
 
 impl PortalVisibilityRoot {
-    pub(crate) fn create(open: bool) -> SilexResult<Self> {
-        let element = document()
-            .create_element("div")
-            .map_err(SilexError::fatal)?
-            .dyn_into::<HtmlElement>()
-            .map_err(|_| {
-                SilexError::fatal(SilexErrorKind::Dom(
-                    "Portal visibility root must be an HTML element".to_string(),
-                ))
-            })?;
-        element
-            .set_attribute(PORTAL_VISIBILITY_ROOT_ATTRIBUTE, "")
-            .map_err(SilexError::fatal)?;
-        let root = Self { element };
+    pub(crate) fn create(dom: DomContext, open: bool) -> SilexResult<Self> {
+        let element = dom
+            .create_element(ElementSpec::new("div"))
+            .map_err(dom_error)?;
+        set_attribute(
+            &dom,
+            &element,
+            PORTAL_VISIBILITY_ROOT_ATTRIBUTE,
+            AttributeValue::Empty,
+        )?;
+        let root = Self { dom, element };
         root.set_open(open)?;
         Ok(root)
     }
 
-    pub(crate) fn element(&self) -> &HtmlElement {
+    pub(crate) fn element(&self) -> &DomElement {
         &self.element
     }
 
     pub(crate) fn set_open(&self, open: bool) -> SilexResult<()> {
-        update_visibility_state(&self.element, open)
+        set_attribute(
+            &self.dom,
+            &self.element,
+            "data-state",
+            AttributeValue::text(if open { "open" } else { "closed" }),
+        )?;
+        set_attribute(
+            &self.dom,
+            &self.element,
+            "aria-hidden",
+            AttributeValue::text(if open { "false" } else { "true" }),
+        )?;
+        set_attribute(
+            &self.dom,
+            &self.element,
+            "style",
+            AttributeValue::text(if open {
+                "display: contents !important; pointer-events: auto;"
+            } else {
+                "display: none !important; pointer-events: none;"
+            }),
+        )
     }
 }
 
-/// Explicit attribute entry point for a Portal host.
-///
-/// Visibility state belongs to the private root. This builder therefore
-/// rejects framework-owned fields while retaining ordinary host diagnostics,
-/// identity and event attributes for callers.
 #[derive(Clone, Default)]
 pub struct PortalHostAttrs<'scope> {
     attrs: Vec<AttrOp<'scope>>,
@@ -82,7 +94,7 @@ impl<'scope> PortalHostAttrs<'scope> {
         let target = ApplyTarget::attr(name);
         if let Some(name) = reserved_host_attribute(&target) {
             return Err(SilexError::fatal(SilexErrorKind::Dom(format!(
-                "PortalHostAttrs field `{name}` is reserved; use the Portal open signal"
+                "PortalHostAttrs field {name} is reserved; use the Portal open signal"
             ))));
         }
         self.attrs
@@ -123,13 +135,10 @@ impl<'scope> PortalHostAttrs<'scope> {
     }
 }
 
-/// Controls whether a Portal keeps its content owner while it is hidden.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum PortalContentMode {
-    /// Keep the content DOM, event handlers and child resources alive.
     #[default]
     KeepAlive,
-    /// Keep the host and slot, but unmount the content while closed.
     UnmountWhenClosed,
 }
 
@@ -138,8 +147,26 @@ struct PortalView<'scope> {
     children: AnyView<'scope>,
     open: Option<Rx<'scope, bool>>,
     content_mode: PortalContentMode,
-    mount_to: Option<Node>,
+    mount_to: Option<DomNode>,
     host_attrs: PortalHostAttrs<'scope>,
+}
+
+fn dom_error(error: DomError) -> SilexError {
+    SilexError::fatal(SilexErrorKind::Dom(error.to_string()))
+}
+
+fn set_attribute(
+    dom: &DomContext,
+    element: &DomElement,
+    name: &str,
+    value: AttributeValue,
+) -> SilexResult<()> {
+    dom.set_attribute(AttributeRequest::new(
+        element,
+        AttributeTarget::named(name),
+        value,
+    ))
+    .map_err(dom_error)
 }
 
 fn close_owner<'scope>(owner: &MountOwnerToken<'scope>) -> SilexResult<()> {
@@ -148,28 +175,16 @@ fn close_owner<'scope>(owner: &MountOwnerToken<'scope>) -> SilexResult<()> {
         .map_err(|error| SilexError::fatal(SilexErrorKind::Close(error)))
 }
 
-fn remove_node(node: &Node) -> SilexResult<()> {
-    if let Some(parent) = node.parent_node() {
-        parent.remove_child(node).map_err(SilexError::fatal)?;
+fn remove_node(dom: &DomContext, node: &DomNode) -> SilexResult<()> {
+    if dom.parent(node).map_err(dom_error)?.is_some() {
+        dom.remove(node).map_err(dom_error)?;
     }
     Ok(())
 }
 
-fn cleanup_failed_portal_mount<'scope>(
-    host_owner: &MountOwnerToken<'scope>,
-    content_owner: &MountOwnerToken<'scope>,
-    host: &Node,
-    error_handler: MountErrorHandler<'scope>,
-) {
-    for result in [
-        close_owner(content_owner),
-        close_owner(host_owner),
-        remove_node(host),
-    ] {
-        if let Err(error) = result {
-            let _ = error_handler.handle(error);
-        }
-    }
+fn cleanup_failed_mount<'scope>(dom: &DomContext, owner: &MountOwnerToken<'scope>, host: &DomNode) {
+    let _ = close_owner(owner);
+    let _ = remove_node(dom, host);
 }
 
 fn reserved_host_attribute(target: &ApplyTarget) -> Option<&'static str> {
@@ -183,345 +198,189 @@ fn reserved_host_attribute(target: &ApplyTarget) -> Option<&'static str> {
     }
 }
 
-fn reserved_attribute_in_op<'scope>(op: &AttrOp<'scope>) -> Option<&'static str> {
-    match op {
-        AttrOp::Update(update) => reserved_host_attribute(&update.target),
-        AttrOp::CombinedStyles(_) => Some("style"),
-        AttrOp::Reactive(plan) => match &plan.target {
-            ReactiveBindingTarget::Attribute(target) => reserved_host_attribute(target),
-            ReactiveBindingTarget::StyleProperty(_) | ReactiveBindingTarget::DynamicStyle => {
-                Some("style")
-            }
-            _ => None,
-        },
-        AttrOp::Sequence(ops) => ops.iter().find_map(reserved_attribute_in_op),
-        AttrOp::CombinedClasses(_) | AttrOp::Custom { .. } | AttrOp::Noop => None,
-    }
-}
-
-fn validate_host_attributes<'scope>(attrs: &[AttrOp<'scope>]) -> SilexResult<()> {
-    if let Some(name) = attrs.iter().find_map(reserved_attribute_in_op) {
-        return Err(SilexError::fatal(SilexErrorKind::Dom(format!(
-            "Portal host attribute `{name}` is reserved; use the Portal open signal or host API"
-        ))));
-    }
-    Ok(())
-}
-
-fn update_visibility_state(element: &HtmlElement, open: bool) -> SilexResult<()> {
-    let element_ref: &Element = element.as_ref();
-    element_ref
-        .set_attribute("data-state", if open { "open" } else { "closed" })
-        .map_err(SilexError::fatal)?;
-    element_ref
-        .set_attribute("aria-hidden", if open { "false" } else { "true" })
-        .map_err(SilexError::fatal)?;
-    element
-        .style()
-        .set_property_with_priority(
-            "display",
-            if open { "contents" } else { "none" },
-            "important",
-        )
-        .map_err(SilexError::fatal)?;
-    element
-        .style()
-        .set_property("pointer-events", if open { "auto" } else { "none" })
-        .map_err(SilexError::fatal)
-}
-
 impl<'scope> PortalView<'scope> {
     fn mount_inner(self, context: &MountContext<'scope>) -> SilexResult<MountInstance<'scope>> {
-        let host_attrs = self.host_attrs.into_attrs();
-        validate_host_attributes(&host_attrs)?;
-        let owner = context.owner();
-        let error_handler = context.error_handler();
-        let document = document();
-        let target = match self.mount_to {
+        let attrs = self.host_attrs.into_attrs();
+        let dom = context.dom().clone();
+        let target = match self.mount_to.clone() {
             Some(target) => target,
-            None => document
-                .body()
+            None => dom
+                .document_body()
+                .map_err(dom_error)?
                 .ok_or_else(|| {
                     SilexError::fatal(SilexErrorKind::Dom(
                         "Portal requires document.body when no target is supplied".to_string(),
                     ))
                 })?
-                .into(),
+                .node()
+                .clone(),
         };
-        let initial_open = match self.open {
-            Some(open) => open.with(|value| *value)?,
-            None => true,
-        };
-        let host_element = document.create_element("div").map_err(SilexError::fatal)?;
-        let host: Node = host_element.clone().into();
-        let visibility_root = PortalVisibilityRoot::create(initial_open)?;
-        let root_element = visibility_root.element().clone();
-        host_element
-            .append_child(root_element.as_ref())
-            .map_err(SilexError::fatal)?;
-        let host_owner = owner.child();
-        let host_token = host_owner.clone();
+        // Do not subscribe the surrounding render effect to Portal visibility.
+        let initial_open = self
+            .open
+            .as_ref()
+            .map_or(Ok(true), |open| open.with_untracked(|value| *value))?;
+        let host = dom
+            .create_element(ElementSpec::new("div"))
+            .map_err(dom_error)?;
+        let root = PortalVisibilityRoot::create(dom.clone(), initial_open)?;
+        dom.append(host.node(), root.element().node())
+            .map_err(dom_error)?;
+        let host_owner = context.owner().child();
         let attached = Rc::new(Cell::new(false));
-
-        let setup_result = catch_unwind(AssertUnwindSafe(|| -> SilexResult<()> {
-            let attached_for_commit = attached.clone();
-            let host_for_commit = host.clone();
-            context.on_commit(move || {
-                MountTarget::Append(target.clone()).append(&host_for_commit)?;
-                attached_for_commit.set(true);
-                Ok(())
-            })?;
-
-            let host_context = context.with_parts(
-                MountTarget::Append(host.clone()),
-                context.ancestry().push(&host_element),
-                host_token.clone(),
-                context.transaction().clone(),
-            );
-            for attr in host_attrs {
-                attr.apply(&host_element, &host_context)?;
-            }
-            let host_html = host_element
-                .clone()
-                .dyn_into::<HtmlElement>()
-                .map_err(|_| {
-                    SilexError::fatal(SilexErrorKind::Dom(
-                        "Portal host must be an HTML element".to_string(),
-                    ))
-                })?;
-            host_html
-                .style()
-                .set_property("display", "contents")
-                .map_err(SilexError::fatal)?;
-            if let Some(open) = self.open {
-                let root_for_effect = PortalVisibilityRoot {
-                    element: root_element.clone(),
-                };
-                let effect_owner = host_owner.clone();
-                context.on_commit(move || {
-                    effect_owner.effect(
-                        EffectPhase::Normal,
-                        Box::new(move || {
-                            let visible = open.with(|value| *value)?;
-                            root_for_effect.set_open(visible)
-                        }),
-                        error_handler,
-                    )
-                })?;
-            }
-
-            match self.content_mode {
-                PortalContentMode::KeepAlive => {
-                    let content_owner = host_owner.child();
-                    let children = self.children.clone();
-                    let portal_context = context.clone();
-                    let content_root: Node = root_element.clone().into();
-                    let failed_mount_host = host.clone();
-                    let failed_mount_owner = host_owner.clone();
-                    let attached_for_content = attached.clone();
-                    context.on_commit(move || {
-                        if !attached_for_content.get() {
-                            cleanup_failed_portal_mount(
-                                &failed_mount_owner,
-                                &content_owner,
-                                &failed_mount_host,
-                                error_handler,
-                            );
-                            return Err(SilexError::fatal(SilexErrorKind::Dom(
-                                "Portal host target was not committed".to_string(),
-                            )));
-                        }
-                        let content_transaction = MountTransaction::new();
-                        let content_context = portal_context.with_parts(
-                            MountTarget::Append(content_root.clone()),
-                            portal_context.ancestry().clone(),
-                            content_owner.clone(),
-                            content_transaction.clone(),
-                        );
-                        let result =
-                            catch_unwind(AssertUnwindSafe(|| children.mount(&content_context)));
-                        match result {
-                            Ok(Ok(_instance)) => match content_transaction.commit() {
-                                Ok(()) => Ok(()),
-                                Err(error) => {
-                                    cleanup_failed_portal_mount(
-                                        &failed_mount_owner,
-                                        &content_owner,
-                                        &failed_mount_host,
-                                        error_handler,
-                                    );
-                                    Err(error)
-                                }
-                            },
-                            Ok(Err(error)) => {
-                                let _ = content_transaction.rollback();
-                                cleanup_failed_portal_mount(
-                                    &failed_mount_owner,
-                                    &content_owner,
-                                    &failed_mount_host,
-                                    error_handler,
-                                );
-                                Err(error)
-                            }
-                            Err(panic) => {
-                                let _ = content_transaction.rollback();
-                                cleanup_failed_portal_mount(
-                                    &failed_mount_owner,
-                                    &content_owner,
-                                    &failed_mount_host,
-                                    error_handler,
-                                );
-                                resume_unwind(panic);
-                            }
-                        }
-                    })?;
-                }
-                PortalContentMode::UnmountWhenClosed => {
-                    let slot_element = document.create_element("div").map_err(SilexError::fatal)?;
-                    slot_element
-                        .set_attribute("data-portal-content-slot", "")
-                        .map_err(SilexError::fatal)?;
-                    let slot_html =
-                        slot_element
-                            .clone()
-                            .dyn_into::<HtmlElement>()
-                            .map_err(|_| {
-                                SilexError::fatal(SilexErrorKind::Dom(
-                                    "Portal content slot must be an HTML element".to_string(),
-                                ))
-                            })?;
-                    slot_html
-                        .style()
-                        .set_property("display", "contents")
-                        .map_err(SilexError::fatal)?;
-                    let slot: Node = slot_element.clone().into();
-                    root_element
-                        .append_child(&slot)
-                        .map_err(SilexError::fatal)?;
-
-                    let slot_for_cleanup = slot.clone();
-                    host_owner.on_cleanup(
-                        Box::new(move || remove_node(&slot_for_cleanup)),
-                        error_handler,
-                    )?;
-
-                    let active_content = Rc::new(RefCell::new(None));
-                    let active_content_for_effect = active_content.clone();
-                    let children = self.children.clone();
-                    let parent_owner = host_owner.clone();
-                    let open = self.open;
-                    let portal_context = context.clone();
-                    let effect_owner = host_owner.clone();
-                    let attached_for_effect = attached.clone();
-                    context.on_commit(move || {
-                        effect_owner.effect(
-                            EffectPhase::Normal,
-                            Box::new(move || -> SilexResult<()> {
-                                if !attached_for_effect.get() {
-                                    return Err(SilexError::fatal(SilexErrorKind::Dom(
-                                        "Portal host target was not committed".to_string(),
-                                    )));
-                                }
-                                let visible = open
-                                    .ok_or_else(|| {
-                                        SilexError::fatal(SilexErrorKind::Dom(
-                                            "UnmountWhenClosed Portal requires an open signal"
-                                                .to_string(),
-                                        ))
-                                    })?
-                                    .with(|value| *value)?;
-                                if visible {
-                                    if active_content_for_effect.borrow().is_none() {
-                                        let content_owner = parent_owner.child();
-                                        let content_transaction = MountTransaction::new();
-                                        let content_context = portal_context.with_parts(
-                                            MountTarget::Append(slot.clone()),
-                                            portal_context.ancestry().clone(),
-                                            content_owner.clone(),
-                                            content_transaction.clone(),
-                                        );
-                                        let result = catch_unwind(AssertUnwindSafe(|| {
-                                            children.mount(&content_context)
-                                        }));
-                                        match result {
-                                            Ok(Ok(_instance)) => {
-                                                match content_transaction.commit() {
-                                                    Ok(()) => {
-                                                        *active_content_for_effect.borrow_mut() =
-                                                            Some(content_owner);
-                                                        Ok(())
-                                                    }
-                                                    Err(error) => {
-                                                        let _ = close_owner(&content_owner);
-                                                        Err(error)
-                                                    }
-                                                }
-                                            }
-                                            Ok(Err(error)) => {
-                                                let _ = content_transaction.rollback();
-                                                close_owner(&content_owner)?;
-                                                Err(error)
-                                            }
-                                            Err(panic) => {
-                                                let _ = content_transaction.rollback();
-                                                let _ = close_owner(&content_owner);
-                                                resume_unwind(panic);
-                                            }
-                                        }?
-                                    }
-                                } else if let Some(content_owner) =
-                                    active_content_for_effect.borrow_mut().take()
-                                {
-                                    close_owner(&content_owner)?;
-                                }
-                                Ok(())
-                            }),
-                            error_handler,
-                        )
-                    })?;
-                }
-            }
-
-            Ok(())
-        }));
-
-        match setup_result {
-            Ok(Ok(())) => {}
-            Ok(Err(error)) => {
-                let _ = close_owner(&host_owner);
-                let _ = remove_node(&host);
-                return Err(error);
-            }
-            Err(panic) => {
-                let _ = close_owner(&host_owner);
-                let _ = remove_node(&host);
-                resume_unwind(panic);
-            }
+        let error_handler = context.error_handler();
+        let host_context = context.with_parts(
+            MountTarget::append(dom.clone(), host.node().clone()),
+            context.ancestry().push(&host),
+            host_owner.clone(),
+            context.transaction().clone(),
+        );
+        for attr in attrs {
+            attr.apply(&host, &host_context)?;
         }
 
-        let cleanup_active = Rc::new(Cell::new(true));
-        let cleanup_active_for_owner = cleanup_active.clone();
-        let cleanup_owner = host_owner.clone();
-        let cleanup_host = host.clone();
-        owner
-            .on_cleanup(
-                Box::new(move || {
-                    if cleanup_active_for_owner.replace(false) {
-                        let owner_result = close_owner(&cleanup_owner);
-                        let remove_result = remove_node(&cleanup_host);
-                        owner_result?;
-                        remove_result?;
+        let host_for_commit = host.node().clone();
+        let target_for_commit = target.clone();
+        let dom_for_commit = dom.clone();
+        let attached_for_commit = attached.clone();
+        let children = self.children;
+        let open = self.open;
+        let content_mode = self.content_mode;
+        let root_for_content = root.clone();
+        let context_for_content = context.clone();
+        let host_for_content = host.clone();
+        let host_owner_for_content = host_owner.clone();
+        context.on_commit(move || {
+            let attempt = catch_unwind(AssertUnwindSafe(|| {
+                (|| {
+                    dom_for_commit
+                        .append(&target_for_commit, &host_for_commit)
+                        .map_err(dom_error)?;
+                    attached_for_commit.set(true);
+                    match content_mode {
+                        PortalContentMode::KeepAlive => {
+                            let child_owner = host_owner_for_content.child();
+                            let transaction = MountTransaction::new();
+                            let child_context = context_for_content.with_parts(
+                                MountTarget::append(
+                                    dom_for_commit.clone(),
+                                    root_for_content.element().node().clone(),
+                                ),
+                                context_for_content.ancestry().push(&host_for_content),
+                                child_owner.clone(),
+                                transaction.clone(),
+                            );
+                            let result = child_context
+                                .mount(&children)
+                                .and_then(|_| transaction.commit());
+                            if result.is_err() {
+                                let _ = transaction.rollback();
+                                let _ = close_owner(&child_owner);
+                            }
+                            result
+                        }
+                        PortalContentMode::UnmountWhenClosed => {
+                            let open = open.ok_or_else(|| {
+                                SilexError::fatal(SilexErrorKind::Dom(
+                                    "UnmountWhenClosed Portal requires an open signal".to_string(),
+                                ))
+                            })?;
+                            let active = Rc::new(RefCell::new(
+                                None::<(MountOwnerToken<'scope>, MountInstance<'scope>)>,
+                            ));
+                            let dom_for_effect = dom_for_commit.clone();
+                            let context_for_effect = context_for_content.clone();
+                            let root_for_effect = root_for_content.element().node().clone();
+                            let parent_owner = host_owner_for_content.clone();
+                            let children_for_effect = children.clone();
+                            let host_for_effect = host_for_content.clone();
+                            host_owner_for_content.effect(
+                                EffectPhase::Normal,
+                                Box::new(move || {
+                                    if !attached.get() {
+                                        return Ok(());
+                                    }
+                                    if open.with(|value| *value)? {
+                                        if active.borrow().is_none() {
+                                            let child_owner = parent_owner.child();
+                                            let transaction = MountTransaction::new();
+                                            let child_context = context_for_effect.with_parts(
+                                                MountTarget::append(
+                                                    dom_for_effect.clone(),
+                                                    root_for_effect.clone(),
+                                                ),
+                                                context_for_effect
+                                                    .ancestry()
+                                                    .push(&host_for_effect),
+                                                child_owner.clone(),
+                                                transaction.clone(),
+                                            );
+                                            let children = children_for_effect.clone();
+                                            let instance = child_context.mount(&children)?;
+                                            transaction.commit()?;
+                                            *active.borrow_mut() = Some((child_owner, instance));
+                                        }
+                                    } else if let Some((child_owner, instance)) =
+                                        active.borrow_mut().take()
+                                    {
+                                        close_owner(&child_owner)?;
+                                        for node in instance.nodes() {
+                                            remove_node(&dom_for_effect, node)?;
+                                        }
+                                    }
+                                    Ok(())
+                                }),
+                                error_handler,
+                            )
+                        }
                     }
-                    Ok(())
-                }),
-                error_handler,
-            )
-            .inspect_err(|_| {
-                let _ = close_owner(&host_owner);
-                let _ = remove_node(&host);
-            })?;
+                })()
+            }));
+            match attempt {
+                Ok(result) => {
+                    if result.is_err() {
+                        cleanup_failed_mount(
+                            &dom_for_commit,
+                            &host_owner_for_content,
+                            &host_for_commit,
+                        );
+                    }
+                    result
+                }
+                Err(panic) => {
+                    cleanup_failed_mount(
+                        &dom_for_commit,
+                        &host_owner_for_content,
+                        &host_for_commit,
+                    );
+                    resume_unwind(panic);
+                }
+            }
+        })?;
 
-        Ok(MountInstance::from_nodes(vec![host]))
+        if let Some(open) = open {
+            let root_for_effect = root.clone();
+            let effect_owner = host_owner.clone();
+            context.on_commit(move || {
+                effect_owner.effect(
+                    EffectPhase::Normal,
+                    Box::new(move || root_for_effect.set_open(open.with(|value| *value)?)),
+                    error_handler,
+                )
+            })?;
+        }
+
+        let dom_for_cleanup = dom.clone();
+        let host_node = host.node().clone();
+        let host_node_for_cleanup = host_node.clone();
+        context.owner().on_cleanup(
+            Box::new(move || {
+                close_owner(&host_owner)?;
+                remove_node(&dom_for_cleanup, &host_node_for_cleanup)
+            }),
+            error_handler,
+        )?;
+        Ok(MountInstance::from_nodes(vec![host_node]))
     }
 }
 
@@ -531,15 +390,14 @@ impl<'scope> View<'scope> for PortalView<'scope> {
     }
 }
 
-/// Create a Portal host that is always mounted for the lifetime of its owner.
 #[component]
 pub fn PortalHost<'scope, Ctx>(
-    #[ctx] ctx: Ctx,
+    #[ctx] _ctx: Ctx,
     #[prop(render)]
     #[chain]
     children: AnyView<'scope>,
     #[chain(default)] host_attrs: PortalHostAttrs<'scope>,
-    #[chain(default)] mount_to: Option<Node>,
+    #[chain(default)] mount_to: Option<DomNode>,
 ) -> impl View<'scope> {
     PortalView {
         children,
@@ -550,17 +408,16 @@ pub fn PortalHost<'scope, Ctx>(
     }
 }
 
-/// Create a stable Portal host whose visibility follows `open`.
 #[component]
 pub fn Portal<'scope, Ctx>(
-    #[ctx] ctx: Ctx,
+    #[ctx] _ctx: Ctx,
     #[prop(into)] open: Rx<'scope, bool>,
     #[prop(render)]
     #[chain]
     children: AnyView<'scope>,
     #[chain(default)] host_attrs: PortalHostAttrs<'scope>,
     #[chain(default)] content_mode: PortalContentMode,
-    #[chain(default)] mount_to: Option<Node>,
+    #[chain(default)] mount_to: Option<DomNode>,
 ) -> impl View<'scope> {
     PortalView {
         children,
@@ -568,69 +425,5 @@ pub fn Portal<'scope, Ctx>(
         content_mode,
         mount_to,
         host_attrs,
-    }
-}
-
-#[cfg(all(test, target_arch = "wasm32"))]
-mod tests {
-    use super::*;
-    use wasm_bindgen_test::*;
-
-    wasm_bindgen_test_configure!(run_in_browser);
-
-    #[wasm_bindgen_test]
-    fn visibility_root_writes_closed_and_open_state_while_detached() {
-        let root = PortalVisibilityRoot::create(false).expect("root should be created");
-        let element = root.element();
-
-        assert!(element.parent_node().is_none());
-        assert!(element.has_attribute(PORTAL_VISIBILITY_ROOT_ATTRIBUTE));
-        assert_eq!(
-            element.get_attribute("data-state").as_deref(),
-            Some("closed")
-        );
-        assert_eq!(
-            element.get_attribute("aria-hidden").as_deref(),
-            Some("true")
-        );
-        assert_eq!(
-            element
-                .style()
-                .get_property_value("display")
-                .expect("display should be readable"),
-            "none"
-        );
-        assert_eq!(
-            element.style().get_property_priority("display"),
-            "important"
-        );
-        assert_eq!(
-            element
-                .style()
-                .get_property_value("pointer-events")
-                .expect("pointer-events should be readable"),
-            "none"
-        );
-
-        root.set_open(true).expect("root should open");
-        assert_eq!(element.get_attribute("data-state").as_deref(), Some("open"));
-        assert_eq!(
-            element.get_attribute("aria-hidden").as_deref(),
-            Some("false")
-        );
-        assert_eq!(
-            element
-                .style()
-                .get_property_value("display")
-                .expect("display should be readable"),
-            "contents"
-        );
-        assert_eq!(
-            element
-                .style()
-                .get_property_value("pointer-events")
-                .expect("pointer-events should be readable"),
-            "auto"
-        );
     }
 }

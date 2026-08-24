@@ -6,8 +6,10 @@ publish = false
 
 [dependencies]
 silex = { workspace = true, features = ["bootstrap", "tw", "persistence"] }
+silex_view.workspace = true
 wasm-bindgen.workspace = true
 
 [dev-dependencies]
 gloo-timers.workspace = true
 wasm-bindgen-test.workspace = true
+web-sys = { workspace = true, features = ["PointerEventInit"] }

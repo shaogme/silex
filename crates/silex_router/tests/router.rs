@@ -1,17 +1,16 @@
 #![cfg(target_arch = "wasm32")]
 
 use silex_core::{
-    EffectPhase, ErrorHandlerToken, ErrorReporter, OwnerAccess, ReadSignal, Runtime, RxGet,
+    EffectPhase, ErrorHandlerInput, ErrorHandlerToken, OwnerAccess, ReadSignal, Runtime, RxGet,
     SilexContext, SilexError, SilexErrorKind, SilexResult,
 };
-use silex_dom::view::{
-    AnyView, MountContext, MountInstance, MountOwnerToken, View, mount_text_node,
-};
+use silex_dom::browser::BrowserDom;
 use silex_router::macros::router;
 use silex_router::{
     Link, Navigator, RouteEntry, RoutePath, RouteTable, Router, RouterContext, RouterContextProps,
     RouterView,
 };
+use silex_view::{AnyView, MountContext, MountInstance, MountOwnerToken, View};
 use std::{
     cell::{Cell, RefCell},
     collections::HashMap,
@@ -55,10 +54,23 @@ fn mount_view<'owner, V: View<'owner>>(
     view: &V,
     owner: &MountOwnerToken<'owner>,
     parent: &web_sys::Node,
-    error_handler: ErrorReporter<'owner>,
+    error_handler: ErrorHandlerToken<'owner>,
 ) -> SilexResult<MountInstance<'owner>> {
-    let context = MountContext::for_parent(parent.clone(), owner.clone(), error_handler);
-    let instance = view.mount(&context)?;
+    let document = web_sys::window()
+        .ok_or_else(|| SilexError::fatal(SilexErrorKind::Dom("window missing".into())))?
+        .document()
+        .ok_or_else(|| SilexError::fatal(SilexErrorKind::Dom("document missing".into())))?;
+    let browser = BrowserDom::new(document);
+    let parent = browser
+        .from_web_sys_node(parent.clone())
+        .map_err(|error| SilexError::fatal(SilexErrorKind::Dom(error.to_string())))?;
+    let context = MountContext::for_parent(
+        browser.context(),
+        parent,
+        owner.clone(),
+        error_handler.handler_ref(),
+    );
+    let instance = context.mount(view)?;
     context.transaction().commit()?;
     Ok(instance)
 }
@@ -222,8 +234,7 @@ fn router_navigation_uses_required_table_and_updates_outlet() {
             .routes(navigation_table(navigator.clone()))
             .build();
         let (owner, error_handler) = test_owner(owner);
-        let _ = mount_view(&view, &owner, &host, error_handler.view())
-            .expect("router view should mount");
+        let _ = mount_view(&view, &owner, &host, error_handler).expect("router view should mount");
 
         assert_eq!(host.text_content().as_deref(), Some("7"));
         assert_eq!(spy.count("add"), 1);
@@ -311,8 +322,7 @@ fn router_layout_is_created_once_while_outlet_changes() {
             })
             .build();
         let (owner, error_handler) = test_owner(owner);
-        let _ = mount_view(&view, &owner, &host, error_handler.view())
-            .expect("router view should mount");
+        let _ = mount_view(&view, &owner, &host, error_handler).expect("router view should mount");
         assert_eq!(host.text_content().as_deref(), Some("one"));
         assert_eq!(layouts.get(), 1);
         let navigator = navigator
@@ -357,8 +367,8 @@ fn nested_outlet_keeps_parent_layout_while_child_route_changes() {
         let ctx = SilexContext::new(owner, context_error_handler.view());
         let view = Router(ctx).base("/app").routes(table).build();
         let (owner, error_handler) = test_owner(owner);
-        let _ = mount_view(&view, &owner, &host, error_handler.view())
-            .expect("nested router should mount");
+        let _ =
+            mount_view(&view, &owner, &host, error_handler).expect("nested router should mount");
         assert_eq!(host.text_content().as_deref(), Some("users:1"));
         let navigator = navigator
             .borrow()
@@ -417,7 +427,7 @@ fn link_requires_ctx_and_tracks_active_path() {
         .children("users")
         .active_class("active")
         .build();
-        let _ = mount_view(&link, &owner, &host, error_handler.view()).expect("link should mount");
+        let _ = mount_view(&link, &owner, &host, error_handler).expect("link should mount");
 
         let element: web_sys::Element = host
             .first_child()
@@ -530,7 +540,8 @@ impl<'owner> View<'owner> for RouterCleanupView {
             }),
             context.error_handler(),
         )?;
-        mount_text_node(context, &self.text)
+        let text = self.text.clone();
+        context.mount(&text)
     }
 }
 
@@ -559,8 +570,8 @@ fn router_owner_close_removes_listener_and_ignores_late_popstate() {
             let ctx = SilexContext::new(owner, context_error_handler.view());
             let view = Router(ctx).base("/app").routes(table).build();
             let (owner, error_handler) = test_owner(owner);
-            let _ = mount_view(&view, &owner, &host, error_handler.view())
-                .expect("router view should mount");
+            let _ =
+                mount_view(&view, &owner, &host, error_handler).expect("router view should mount");
 
             assert_eq!(host.text_content().as_deref(), Some("lexical"));
             assert_eq!(spy.count("add"), 1);
@@ -608,8 +619,8 @@ fn router_does_not_mount_outlet_when_listener_registration_fails() {
         let view = Router(ctx).base("/app").routes(table).build();
         let (owner, error_handler) = test_owner(owner);
         assert!(matches!(
-            mount_view(&view, &owner, &host, error_handler.view()),
-            Err(SilexError::Fatal(SilexErrorKind::Javascript(_)))
+            mount_view(&view, &owner, &host, error_handler),
+            Err(SilexError::Fatal(SilexErrorKind::Dom(_)))
         ));
     });
 
@@ -642,7 +653,7 @@ impl<'owner> View<'owner> for FactoryTextView<'owner> {
             context.error_handler(),
         )?;
         let text = self.text.get()?;
-        mount_text_node(context, &text)
+        context.mount(&text)
     }
 }
 
@@ -669,7 +680,7 @@ fn router_view_factory_keeps_scoped_dynamic_owner_cleanup() {
             })
         }));
         let (owner, error_handler) = test_owner(owner);
-        let _ = mount_view(&factory, &owner, &host, error_handler.view())
+        let _ = mount_view(&factory, &owner, &host, error_handler)
             .expect("router factory should mount");
 
         assert_eq!(host.text_content().as_deref(), Some("factory-one"));

@@ -48,13 +48,13 @@ WindowListenerHandle
      └── host 正在借用 → reporter(ReentrantOperation)
 ```
 
-controller 只保存由 `silex_dom::helpers::detached` 返回的
-`WindowListenerHandle`。`remove_page_lifecycle` 清空 handle 集合，从而移除
+controller 只保存由 `silex_dom::host` browser resource 注册得到的
+`HostResource`。`remove_page_lifecycle` 清空 handle 集合，从而移除
 所有由本 controller 安装的 listener；`Drop for PageController` 也会先做
 同样的操作，再让内部 `AppHost` drop。这样页面 listener 不会在 host 已经
 开始清理后继续触发自动 unmount。
 
-页面 listener 是 detached resource，不属于 mount owner。若页面层同时使用
+页面 listener 是 page-controller resource，不属于 mount owner。若页面层同时使用
 owner-bound listener，应让两者分别拥有明确的清理边界，不能期待关闭 root
 owner 自动移除 `PageController` 的 listeners。
 

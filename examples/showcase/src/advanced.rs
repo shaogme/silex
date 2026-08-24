@@ -1,9 +1,8 @@
 use std::borrow::Cow;
 
 use crate::css::AppTheme;
-use silex::core::log::console_log;
+use silex::dom::log::console_log;
 use silex::prelude::*;
-use silex::reexports::web_sys;
 
 // --- Store Definition ---
 #[derive(Clone, Default, serde::Serialize, serde::Deserialize)]
@@ -386,7 +385,7 @@ pub fn MutationDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
                 .style(sty(ctx).margin_right(px(10))?.padding("5px")?),
             button("Login")
                 .attr("type", "button") // Prevent accidental form submission
-                .on(event::click, move |e: web_sys::MouseEvent| {
+                .on(event::click, move |e: DomEvent| {
                     e.prevent_default();
 
                     // Note: "login_mutation.mutate((username.get(), password.get()));" is the same as "login_mutation.mutate_with((username, password));"
@@ -663,8 +662,8 @@ pub fn AdaptiveReadDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
                         .attr("max", "1")
                         .attr("step", "0.01")
                         .prop("value", stability)
-                        .on(event::input, move |e| {
-                            if let Ok(val) = event_target_value(&e).parse::<f64>() {
+                        .on(event::input, move |e: DomEvent| {
+                            if let Ok(val) = e.input_value().unwrap_or_default().parse::<f64>() {
                                 stability
                                     .set(val)?;
                             }

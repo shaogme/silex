@@ -1,0 +1,40 @@
+[package]
+name = "silex_view"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+default = ["browser"]
+browser = ["silex_dom/browser"]
+ssr = ["silex_dom/ssr"]
+
+[dependencies]
+silex_core.workspace = true
+silex_dom = { path = "../silex_dom", version = "0.1.0-beta.9", default-features = false }
+
+[dev-dependencies]
+trybuild = "1.0"
+js-sys.workspace = true
+wasm-bindgen.workspace = true
+wasm-bindgen-test.workspace = true
+wasm-bindgen-futures.workspace = true
+web-sys = { workspace = true, features = [
+    "Document",
+    "Element",
+    "HtmlInputElement",
+    "MouseEvent",
+    "Node",
+    "NodeList",
+    "Window",
+] }

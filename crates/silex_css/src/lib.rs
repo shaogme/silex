@@ -38,7 +38,7 @@ pub use runtime::{
     CssPart, DynamicCss, DynamicStyleManager, GlobalStyleBinding, GlobalStyleView,
     ManagedDynamicStyle, StaticStyleTemplate, StyledDynamicRule, StyledVariantBinding,
     StyledVariantGroup, dynamic_rule_class, dynamic_rule_class_with_static,
-    inject_managed_dynamic_style, inject_style, make_property_val, render_static_template,
+    inject_managed_dynamic_style_view, inject_style, make_property_val, render_static_template,
 };
 pub use source::{CssSource, IntoCssReactive, IntoCssSource, StaticCssValue, static_css_value};
 pub use theme::{ThemePatchToCss, ThemeToCss, ThemeType};

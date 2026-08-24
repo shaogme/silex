@@ -8,12 +8,11 @@ use silex_core::{
     ErrorHandlerToken, ErrorReporter, HandlerLease, ReactiveError, RxGet, Signal,
     SilexContextProvider, SilexError, SilexErrorKind, SilexResult,
 };
-use silex_dom::prelude::*;
-use silex_dom::view::{
-    BranchEvaluation, BranchRenderContext, MountContext, MountState, SharedCell,
-    mount_branch_stable_cached,
-};
 use silex_macros::component;
+use silex_view::prelude::*;
+use silex_view::{
+    BranchEvaluation, BranchRenderContext, MountContext, MountState, SharedCell, StableBranch,
+};
 
 struct ParentHandler<'scope> {
     lease: HandlerLease<'scope>,
@@ -127,11 +126,11 @@ impl<'scope> View<'scope> for ErrorBoundaryBranchView<'scope> {
     fn mount(&self, context: &MountContext<'scope>) -> SilexResult<MountInstance<'scope>> {
         let key = self.key.clone();
         let render = self.render.clone();
-        mount_branch_stable_cached(
-            context,
+        let branch = StableBranch::new(
             move || key(),
             move |evaluation, context| render(evaluation, context),
-        )
+        );
+        context.mount(&branch)
     }
 }
 
@@ -174,7 +173,8 @@ impl<'scope> View<'scope> for ErrorBoundaryView<'scope> {
             error_handler,
         )?;
         let phase_context = context.with_error_handler(self.phase_handler);
-        match self.view.mount(&phase_context) {
+        let view = self.view.clone();
+        match phase_context.mount(&view) {
             Ok(instance) => Ok(instance),
             Err(error @ SilexError::Recoverable(_)) => {
                 let generation = slot.generation().saturating_add(1);
@@ -183,7 +183,8 @@ impl<'scope> View<'scope> for ErrorBoundaryView<'scope> {
                     generation,
                 })?;
                 slot.replace_with_fallback(generation);
-                (self.fallback)(error).mount(context)
+                let fallback = (self.fallback)(error);
+                context.mount(&fallback)
             }
             Err(error) => Err(error),
         }

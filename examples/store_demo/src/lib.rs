@@ -1,4 +1,5 @@
 use silex::bootstrap::{BootstrapError, BrowserBootstrap, JsAppHost};
+use silex::dom::CleanupSink;
 use silex::prelude::*;
 use silex::reexports::*;
 
@@ -63,8 +64,8 @@ fn UserEditor<'scope, Ctx>(#[ctx] ctx: Ctx, user: UserStore<'scope>) -> impl Vie
             input()
                 .type_("text")
                 .value(user.name)
-                .on_input(move |new_val| {
-                    user.name.set(new_val)?;
+                .on(event::input, move |event: DomEvent| {
+                    user.name.set(event.input_value().unwrap_or_default())?;
                     Ok(())
                 }),
         ),
@@ -82,8 +83,8 @@ fn UserEditor<'scope, Ctx>(#[ctx] ctx: Ctx, user: UserStore<'scope>) -> impl Vie
             input()
                 .type_("email")
                 .value(user.email)
-                .on_input(move |new_val| {
-                    user.email.set(new_val)?;
+                .on(event::input, move |event: DomEvent| {
+                    user.email.set(event.input_value().unwrap_or_default())?;
                     Ok(())
                 }),
         ),
@@ -122,12 +123,12 @@ pub fn mount_store() -> Result<JsAppHost, BootstrapError> {
 
 /// Mount the Store demo into a caller-provided target node.
 pub fn mount_store_into(target: web_sys::Node) -> Result<JsAppHost, BootstrapError> {
-    let mut bootstrap = BrowserBootstrap::new(target, CleanupSink::console());
+    let mut bootstrap = BrowserBootstrap::from_web_sys(target, CleanupSink::console())?;
     bootstrap.mount(Runtime::new(), mount_store_view)?;
     bootstrap.into_js_host()
 }
 
-fn mount_store_view<'scope>(ctx: &MountContext<'scope>) -> SilexResult<()> {
+fn mount_store_view<'scope>(ctx: &MountBuilderContext<'scope>) -> SilexResult<()> {
     let owner = ctx.access();
     let error_handler = owner.error_handler(|error: SilexError| {
         web_sys::console::error_1(&error.to_string().into());
@@ -142,5 +143,5 @@ fn mount_store_view<'scope>(ctx: &MountContext<'scope>) -> SilexResult<()> {
     )?;
 
     let silex_ctx = SilexContext::new(owner, error_handler.view());
-    ctx.mount(App(silex_ctx, user).build(), error_handler)
+    ctx.mount_unit(App(silex_ctx, user).build(), error_handler)
 }

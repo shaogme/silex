@@ -8,7 +8,7 @@ error[E0599]: the method `popover` exists for enum `AnyView<'_>`, but its trait 
   | |_________|
   |
   |
- ::: $WORKSPACE/crates/silex_dom/src/view/any.rs
+ ::: $WORKSPACE/crates/silex_view/src/any.rs
   |
   |   pub enum AnyView<'scope> {
   |   ------------------------ doesn't satisfy `AnyView<'_>: AttributeBuilder<'_>` or `AnyView<'_>: PopoverAttributes<'_>`
@@ -20,7 +20,7 @@ error[E0599]: the method `popover` exists for enum `AnyView<'_>`, but its trait 
           which is required by `&AnyView<'_>: PopoverAttributes<'_>`
           `&mut AnyView<'_>: AttributeBuilder<'_>`
           which is required by `&mut AnyView<'_>: PopoverAttributes<'_>`
-note: the method `popover` exists on the type `silex_dom::element::Element<'_>`
+note: the method `popover` exists on the type `silex_view::Element<'_>`
  --> src/attributes.rs
   |
   |                   fn $method(self, value: impl IntoStorable<'scope>) -> Self {

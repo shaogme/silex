@@ -6,6 +6,7 @@ publish = false
 
 [dependencies]
 silex = { workspace = true, features = ["bootstrap", "persistence"] }
+silex_view.workspace = true
 wasm-bindgen.workspace = true
 web-sys.workspace = true
 

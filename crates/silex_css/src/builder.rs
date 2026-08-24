@@ -10,24 +10,25 @@ use crate::{
     },
 };
 use silex_core::{
-    EffectPhase, ErrorReporter, Rx, RxGet, SilexContextProvider, SilexError, SilexResult,
+    EffectPhase, ErrorReporter, Rx, RxGet, SilexContextProvider, SilexError, SilexErrorKind,
+    SilexResult,
 };
-use silex_dom::attribute::{
-    ApplyTarget, ApplyToDom, IntoStorable, ReactiveBinding, ReactiveBindingContext,
-    ReactiveBindingPlan, ReactiveBindingTarget,
-};
-use silex_dom::view::{MountContext, MountErrorHandler, MountOwnerToken};
+use silex_dom::DomElement;
 use silex_hash::{
     css::{CssHasher, Normalized, encode_base36},
     css_hasher,
+};
+use silex_view::MountContext as ViewMountContext;
+use silex_view::attribute::{
+    ApplyTarget as ViewApplyTarget, ApplyToDom as ViewApplyToDom, IntoStorable as ViewIntoStorable,
+    ReactiveBinding as ViewReactiveBinding, ReactiveBindingContext as ViewReactiveBindingContext,
+    ReactiveBindingPlan as ViewReactiveBindingPlan,
 };
 use std::{
     borrow::Cow,
     fmt::{Display, Write},
     hash::{Hash, Hasher},
 };
-use wasm_bindgen::JsCast;
-use web_sys::{Element, HtmlElement, SvgElement};
 
 /// 属性名是 `Cow`：注册表里的是 `&'static str` 常量，`var()` / `raw()` 写进来的
 /// 则来自调用方，写进 CSS 前要先过 `escape::property_name`。
@@ -300,27 +301,6 @@ macro_rules! generate_builder_methods {
 
 for_all_properties!(generate_builder_methods);
 
-impl<'scope> ApplyToDom<'scope> for Style<'scope> {
-    fn apply(
-        &self,
-        el: &Element,
-        _target: ApplyTarget,
-        context: &MountContext<'scope>,
-    ) -> SilexResult<()> {
-        let owner = context.owner();
-        self.apply_to_element(el, &owner, context.error_handler())
-            .map(|_| ())
-    }
-
-    fn into_op(self, _target: ApplyTarget) -> silex_dom::attribute::AttrOp<'scope> {
-        silex_dom::attribute::AttrOp::on_commit(move |el, context| {
-            let owner = context.owner();
-            self.apply_to_element(el, &owner, context.error_handler())
-                .map(|_| ())
-        })
-    }
-}
-
 /// `Style` 编译出的产物：类名、要注入的 CSS、以及待建立的动态绑定。
 ///
 /// 单独拆出来是为了让「生成什么 CSS」这件事能脱离 DOM 被断言——`@layer` 的
@@ -365,106 +345,6 @@ impl<'scope> Style<'scope> {
             dyn_bindings,
         }
     }
-
-    pub fn apply_to_element(
-        &self,
-        el: &Element,
-        owner: &MountOwnerToken<'scope>,
-        error_handler: MountErrorHandler<'scope>,
-    ) -> SilexResult<String> {
-        let RenderedStyle {
-            class_base,
-            css,
-            dyn_bindings,
-        } = self.render();
-
-        if !css.is_empty() {
-            inject_style(&class_base, &css);
-        }
-        el.class_list()
-            .add_1(&class_base)
-            .map_err(SilexError::fatal)?;
-
-        let owned_vars: Vec<String> = dyn_bindings
-            .iter()
-            .map(|(var_name, _)| var_name.clone())
-            .collect();
-        if !dyn_bindings.is_empty() {
-            let el_clone = el.clone();
-            let bindings = dyn_bindings;
-            owner.effect_with_previous(EffectPhase::Normal, Box::new(
-                    move |previous: Option<&Vec<Option<String>>>| -> SilexResult<
-                        Vec<Option<String>>,
-                    > {
-                        let values: Vec<String> = bindings
-                            .iter()
-                            .map(|(_, source)| source.get())
-                            .collect::<SilexResult<_>>()?;
-                        if let Some(style) = element_style(&el_clone) {
-                            for (index, ((name, _), value)) in
-                                bindings.iter().zip(values.iter()).enumerate()
-                            {
-                                let old_value = previous
-                                    .and_then(|values| values.get(index))
-                                    .and_then(Option::as_deref);
-                                if old_value != Some(value.as_str()) {
-                                    style.set_property(name, value).map_err(SilexError::fatal)?;
-                                }
-                            }
-                        }
-                        Ok(values.into_iter().map(Some).collect())
-                    },
-                ),
-                error_handler,
-            )?;
-            let el_clone = el.clone();
-            let class_name = class_base.clone();
-            owner.on_cleanup(
-                Box::new(move || -> SilexResult<()> {
-                    let mut first_error = None;
-                    if let Some(style) = element_style(&el_clone) {
-                        for name in &owned_vars {
-                            if let Err(error) = style.remove_property(name) {
-                                first_error.get_or_insert_with(|| SilexError::fatal(error));
-                            }
-                        }
-                    }
-                    if let Err(error) = el_clone.class_list().remove_1(&class_name) {
-                        first_error.get_or_insert_with(|| SilexError::fatal(error));
-                    }
-                    first_error.map_or(Ok(()), Err)
-                }),
-                error_handler,
-            )?;
-        } else {
-            let el_clone = el.clone();
-            let class_name = class_base.clone();
-            owner.on_cleanup(
-                Box::new(move || -> SilexResult<()> {
-                    let mut first_error = None;
-                    if let Some(style) = element_style(&el_clone) {
-                        for name in &owned_vars {
-                            if let Err(error) = style.remove_property(name) {
-                                first_error.get_or_insert_with(|| SilexError::fatal(error));
-                            }
-                        }
-                    }
-                    if let Err(error) = el_clone.class_list().remove_1(&class_name) {
-                        first_error.get_or_insert_with(|| SilexError::fatal(error));
-                    }
-                    first_error.map_or(Ok(()), Err)
-                }),
-                error_handler,
-            )?;
-        }
-        Ok(class_base)
-    }
-}
-
-fn element_style(el: &Element) -> Option<web_sys::CssStyleDeclaration> {
-    el.dyn_ref::<HtmlElement>()
-        .map(|e| e.style())
-        .or_else(|| el.dyn_ref::<SvgElement>().map(|e| e.style()))
 }
 
 /// 递归计算样式的稳定哈希
@@ -563,50 +443,120 @@ fn generate_css_recursive<'scope>(
     }
 }
 
-impl<'scope> ReactiveBinding<'scope> for Style<'scope> {
-    fn binding_plan(
-        rx: Rx<'scope, Self>,
-        ctx: ReactiveBindingContext,
-    ) -> Option<ReactiveBindingPlan<'scope>> {
-        if !matches!(ctx, ReactiveBindingContext::Value(_)) {
-            return None;
+impl<'scope> ViewApplyToDom<'scope> for Style<'scope> {
+    fn apply(
+        &self,
+        element: &DomElement,
+        _target: ViewApplyTarget,
+        context: &ViewMountContext<'scope>,
+    ) -> SilexResult<()> {
+        let RenderedStyle {
+            class_base,
+            css,
+            dyn_bindings,
+        } = self.render();
+        if !css.is_empty() {
+            inject_style(&class_base, &css);
+        }
+        context
+            .dom()
+            .set_attribute(silex_dom::attribute::AttributeRequest::new(
+                element,
+                silex_dom::attribute::AttributeTarget::Class,
+                silex_dom::attribute::AttributeValue::ClassTokens {
+                    add: vec![class_base.clone()],
+                    remove: Vec::new(),
+                },
+            ))
+            .map_err(|error| SilexError::fatal(SilexErrorKind::Dom(error.to_string())))?;
+
+        let property_names: Vec<String> =
+            dyn_bindings.iter().map(|(name, _)| name.clone()).collect();
+        if !dyn_bindings.is_empty() {
+            let dom = context.dom().clone();
+            let element_for_effect = element.clone();
+            context.owner().effect_with_previous(
+                EffectPhase::Normal,
+                Box::new(move |previous: Option<&Vec<Option<String>>>| {
+                    let values: Vec<String> = dyn_bindings
+                        .iter()
+                        .map(|(_, source)| source.get())
+                        .collect::<SilexResult<_>>()?;
+                    for (index, ((name, _), value)) in
+                        dyn_bindings.iter().zip(values.iter()).enumerate()
+                    {
+                        let old_value = previous
+                            .and_then(|values| values.get(index))
+                            .and_then(Option::as_deref);
+                        if old_value != Some(value.as_str()) {
+                            dom.set_style_property(&element_for_effect, name, Some(value))
+                                .map_err(|error| {
+                                    SilexError::fatal(SilexErrorKind::Dom(error.to_string()))
+                                })?;
+                        }
+                    }
+                    Ok(values.into_iter().map(Some).collect())
+                }),
+                context.error_handler(),
+            )?;
         }
 
-        let installer = move |el: &Element,
-                              owner: &MountOwnerToken<'scope>,
-                              error_handler: MountErrorHandler<'scope>| {
-            let el = el.clone();
-            let owner = owner.clone();
-            let owner_for_callback = owner.clone();
-            owner.effect_with_previous(
-                EffectPhase::Normal,
-                Box::new(move |previous: Option<&String>| -> SilexResult<String> {
-                    let style = rx.get()?;
-                    let class_name =
-                        style.apply_to_element(&el, &owner_for_callback, error_handler)?;
-                    if let Some(previous) = previous
-                        && previous != &class_name
-                    {
-                        el.class_list()
-                            .remove_1(previous)
-                            .map_err(SilexError::fatal)?;
-                    }
-                    Ok(class_name)
-                }),
-                error_handler,
-            )
-        };
-
-        Some(ReactiveBindingPlan::custom(
-            ReactiveBindingTarget::Custom,
-            installer,
-            |_| Ok(()),
-        ))
+        let dom = context.dom().clone();
+        let element_for_cleanup = element.clone();
+        let class_name = class_base;
+        context.owner().on_cleanup(
+            Box::new(move || {
+                for name in property_names {
+                    dom.set_style_property(&element_for_cleanup, &name, None)
+                        .map_err(|error| {
+                            SilexError::fatal(SilexErrorKind::Dom(error.to_string()))
+                        })?;
+                }
+                dom.set_attribute(silex_dom::attribute::AttributeRequest::new(
+                    &element_for_cleanup,
+                    silex_dom::attribute::AttributeTarget::Class,
+                    silex_dom::attribute::AttributeValue::ClassTokens {
+                        add: Vec::new(),
+                        remove: vec![class_name],
+                    },
+                ))
+                .map_err(|error| SilexError::fatal(SilexErrorKind::Dom(error.to_string())))
+            }),
+            context.error_handler(),
+        )
     }
 }
 
-impl<'scope> IntoStorable<'scope> for Style<'scope> {
+impl<'scope> ViewReactiveBinding<'scope> for Style<'scope> {
+    fn binding_plan(
+        rx: Rx<'scope, Self>,
+        context: ViewReactiveBindingContext,
+    ) -> Option<ViewReactiveBindingPlan<'scope>> {
+        if !matches!(context, ViewReactiveBindingContext::Value(_)) {
+            return None;
+        }
+        let handler = rx.owner().error_handler(|_| {}).ok()?;
+        let classes = rx
+            .map(
+                |style| {
+                    let RenderedStyle {
+                        class_base, css, ..
+                    } = style.render();
+                    if !css.is_empty() {
+                        inject_style(&class_base, &css);
+                    }
+                    class_base
+                },
+                handler.view(),
+            )
+            .ok()?;
+        Some(ViewReactiveBindingPlan::dynamic_classes(classes))
+    }
+}
+
+impl<'scope> ViewIntoStorable<'scope> for Style<'scope> {
     type Stored = Self;
+
     fn into_storable(self) -> Self::Stored {
         self
     }
@@ -847,7 +797,7 @@ mod tests {
             .expect("child scope should initialize");
     }
 
-    /// `apply_to_element` 每次调用都为每个动态绑定新建一个 `Effect`，而
+    /// View attribute pipeline 每次应用都为每个动态绑定新建一个 `Effect`，而
     /// 响应式绑定计划会在一个外层 `Effect` 里反复调用它。
     /// 这里成立的前提是：内层 `Effect` 是外层的子节点，外层重跑时随之回收。
     ///

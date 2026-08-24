@@ -1,3 +1,4 @@
+use crate::crate_path::silex_view;
 pub mod ast;
 pub mod codegen;
 pub mod functional;
@@ -35,6 +36,7 @@ pub fn tw_verbose_impl(ts: TokenStream) -> Result<TokenStream> {
 
 fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
     let __silex = crate::crate_path::silex();
+    let __view = silex_view();
     let (error_handler, tw_tokens) = parse_tw_input(ts);
     let input_str = if verbose {
         tw_tokens.to_string()
@@ -299,13 +301,14 @@ fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
             let __slx_conditions: ::std::vec::Vec<#__silex::core::Rx<'_, bool>> =
                 ::std::vec![ #(#condition_sources),* ];
 
-            #__silex::dom::attribute::AttrOp::on_commit(
+            #__view::attribute::AttrOp::on_commit(
                 move |element, context| {
                     let owner = context.owner();
                     let error_handler = context.error_handler();
                     #(#inits_tokens)*
                     let __slx_conditions_for_effect = __slx_conditions.clone();
                     let __slx_element = element.clone();
+                    let __slx_dom = context.dom().clone();
                     let __slx_current_class =
                         owner.owner_state(None::<::std::string::String>)?;
                     let __slx_current_class_for_effect = __slx_current_class.clone();
@@ -324,41 +327,32 @@ fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
                                 return Ok(__slx_next_class);
                             }
 
-                            let __slx_update_result = (|| -> #__silex::core::SilexResult<::std::string::String> {
-                                let __slx_old_class =
-                                    __slx_previous_class
-                                        .map(::std::string::String::as_str)
-                                        .unwrap_or("");
-                                for __slx_token in __slx_next_class.split_whitespace() {
-                                    if !__slx_old_class
-                                        .split_whitespace()
-                                        .any(|old| old == __slx_token)
-                                    {
-                                        __slx_element
-                                            .class_list()
-                                            .add_1(__slx_token)
-                                            .map_err(|error| {
-                                                #__silex::core::SilexError::fatal(
-                                                    #__silex::core::SilexErrorKind::from(error),
-                                                )
-                                            })?;
-                                    }
-                                }
-                                for __slx_token in __slx_old_class.split_whitespace() {
-                                    if !__slx_next_class
-                                        .split_whitespace()
-                                        .any(|next| next == __slx_token)
-                                    {
-                                        __slx_element
-                                            .class_list()
-                                            .remove_1(__slx_token)
-                                            .map_err(|error| {
-                                                #__silex::core::SilexError::fatal(
-                                                    #__silex::core::SilexErrorKind::from(error),
-                                                )
-                                            })?;
-                                    }
-                                }
+                    let __slx_update_result = (|| -> #__silex::core::SilexResult<::std::string::String> {
+                                let __slx_old_class = __slx_previous_class
+                                    .map(::std::string::String::as_str)
+                                    .unwrap_or("");
+                                let __slx_add = __slx_next_class
+                                    .split_whitespace()
+                                    .filter(|__slx_token| {
+                                        !__slx_old_class
+                                            .split_whitespace()
+                                            .any(|__slx_old| __slx_old == *__slx_token)
+                                    })
+                                    .map(::std::string::ToString::to_string);
+                                let __slx_remove = __slx_old_class
+                                    .split_whitespace()
+                                    .filter(|__slx_token| {
+                                        !__slx_next_class
+                                            .split_whitespace()
+                                            .any(|__slx_next| __slx_next == *__slx_token)
+                                    })
+                                    .map(::std::string::ToString::to_string);
+                                #__view::attribute::update_class_tokens(
+                                    &__slx_dom,
+                                    &__slx_element,
+                                    __slx_add,
+                                    __slx_remove,
+                                )?;
                                 Ok(__slx_next_class)
                             })();
                             match __slx_update_result {
@@ -377,19 +371,19 @@ fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
                     )?;
 
                     let __slx_element_for_cleanup = element.clone();
+                    let __slx_dom_for_cleanup = context.dom().clone();
                     owner.on_cleanup(
                         ::std::boxed::Box::new(move || -> #__silex::core::SilexResult<()> {
                             if let Some(__slx_class) = __slx_current_class.take_for_cleanup().flatten() {
-                                for __slx_token in __slx_class.split_whitespace() {
-                                    __slx_element_for_cleanup
-                                        .class_list()
-                                        .remove_1(__slx_token)
-                                        .map_err(|error| {
-                                            #__silex::core::SilexError::fatal(
-                                                #__silex::core::SilexErrorKind::from(error),
-                                            )
-                                        })?;
-                                }
+                                let __slx_remove = __slx_class
+                                    .split_whitespace()
+                                    .map(::std::string::ToString::to_string);
+                                #__view::attribute::update_class_tokens(
+                                    &__slx_dom_for_cleanup,
+                                    &__slx_element_for_cleanup,
+                                    ::std::iter::empty(),
+                                    __slx_remove,
+                                )?;
                             }
                             Ok(())
                         }),

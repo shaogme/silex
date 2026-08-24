@@ -1,3 +1,4 @@
+use crate::crate_path::silex_view;
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote};
 use std::collections::HashSet;
@@ -209,8 +210,9 @@ pub fn router_impl(input: TokenStream) -> syn::Result<TokenStream> {
         input.nodes.into_iter().collect(),
     )?;
     let silex = crate::crate_path::silex();
+    let view = silex_view();
     let definitions = generate_enum_definitions(&tree);
-    let implementations = generate_enum_implementations(&silex, &tree);
+    let implementations = generate_enum_implementations(&silex, &view, &tree);
     Ok(quote! {
         #definitions
         #implementations
@@ -518,9 +520,13 @@ fn generate_enum_definitions(tree: &RouteTree) -> TokenStream {
     }
 }
 
-fn generate_enum_implementations(silex: &TokenStream, tree: &RouteTree) -> TokenStream {
+fn generate_enum_implementations(
+    silex: &TokenStream,
+    view: &TokenStream,
+    tree: &RouteTree,
+) -> TokenStream {
     let path_impl = generate_path_impl(silex, tree);
-    let table = generate_table_impl(silex, tree);
+    let table = generate_table_impl(silex, view, tree);
     let matcher = generate_typed_matcher_impl(silex, tree);
     quote! {
         #path_impl
@@ -791,10 +797,10 @@ fn route_constructor(leaf: &RouteLeaf, matched: TokenStream, route_type: &Ident)
     }
 }
 
-fn generate_table_impl(silex: &TokenStream, tree: &RouteTree) -> TokenStream {
+fn generate_table_impl(silex: &TokenStream, view: &TokenStream, tree: &RouteTree) -> TokenStream {
     let visibility = &tree.visibility;
     let name = &tree.name;
-    let table = generate_table_expression(silex, tree, quote! { __silex_render });
+    let table = generate_table_expression(silex, view, tree, quote! { __silex_render });
     quote! {
         impl #name {
             #visibility fn table<'scope, F>(
@@ -802,7 +808,7 @@ fn generate_table_impl(silex: &TokenStream, tree: &RouteTree) -> TokenStream {
             ) -> ::std::result::Result<#silex::router::RouteTable<'scope>, #silex::router::RoutePatternError>
             where
                 F: Fn(Self, #silex::router::RouterContext<'scope>)
-                    -> #silex::dom::view::AnyView<'scope>
+                    -> #view::AnyView<'scope>
                     + 'scope,
             {
                 let __silex_render = ::std::rc::Rc::new(render);
@@ -814,6 +820,7 @@ fn generate_table_impl(silex: &TokenStream, tree: &RouteTree) -> TokenStream {
 
 fn generate_table_expression(
     silex: &TokenStream,
+    view: &TokenStream,
     tree: &RouteTree,
     render: TokenStream,
 ) -> TokenStream {
@@ -848,7 +855,7 @@ fn generate_table_expression(
                 #prefix,
                 #child,
                 move |__silex_ctx, __silex_outlet| {
-                    #silex::dom::view::View::into_any(
+                    #view::View::into_any(
                         (#layout)(__silex_ctx, __silex_outlet)
                     )
                 },

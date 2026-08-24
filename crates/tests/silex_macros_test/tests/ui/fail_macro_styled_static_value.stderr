@@ -1,12 +1,12 @@
 error[E0277]: CSS 动态插值只能接受带当前生命周期的响应式 source (`IntoCssReactive<'scope>`)；普通静态值请直接写入 CSS 或使用 var(--name)
-  --> tests/ui/fail_macro_styled_static_value.rs:11:1
+  --> tests/ui/fail_macro_styled_static_value.rs:10:1
    |
-11 | / styled! {
-12 | |     pub StaticValuePanel<'owner><div>(
-13 | |         #[ctx] ctx: silex_core::SilexContext<'owner>,
-14 | |         children: AnyView<'owner>,
+10 | / styled! {
+11 | |     pub StaticValuePanel<'owner><div>(
+12 | |         #[ctx] ctx: silex_core::SilexContext<'owner>,
+13 | |         children: AnyView<'owner>,
 ...  |
-19 | | }
+18 | | }
    | |_^ 此值不是 scoped reactive source
    |
    = help: the trait `IntoCssReactive<'_>` is not implemented for `&str`

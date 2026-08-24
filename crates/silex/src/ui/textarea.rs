@@ -1,4 +1,3 @@
-use silex_dom::prelude::*;
 use silex_macros::styled;
 
 styled! {

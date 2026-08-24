@@ -10,4 +10,5 @@ edition.workspace = true
 publish = false
 
 [dependencies]
-my_silex = { package = "silex", path = "../../silex", version = "0.1.0-beta.9" }
+my_silex = { package = "silex", path = "../../silex", version = "0.1.0-beta.9", default-features = false, features = ["css", "tw"] }
+my_silex_view = { package = "silex_view", path = "../../silex_view", version = "0.1.0-beta.9" }

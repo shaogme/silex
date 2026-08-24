@@ -3,7 +3,8 @@ use crate::{
     UnmountOutcome,
 };
 use silex_core::{Runtime, SilexResult};
-use silex_dom::{CleanupSink, MountContext, helpers};
+use silex_dom::{CleanupSink, DomContext, DomNode, browser::BrowserDom};
+use silex_view::MountBuilderContext;
 use web_sys::{Element, Node};
 
 /// A browser convenience adapter around [`PageController`].
@@ -17,31 +18,57 @@ pub struct BrowserBootstrap {
 
 impl BrowserBootstrap {
     /// Create a browser bootstrap for a caller-owned DOM node.
-    pub fn new(target: Node, cleanup_sink: CleanupSink) -> Self {
+    pub fn new(dom: DomContext, target: DomNode, cleanup_sink: CleanupSink) -> Self {
         Self {
-            controller: PageController::new(target, cleanup_sink),
+            controller: PageController::new(dom, target, cleanup_sink),
             policy: PageLifecyclePolicy::Manual,
         }
     }
 
+    /// Adapt a browser Node into the backend-neutral bootstrap handles.
+    pub fn from_web_sys(target: Node, cleanup_sink: CleanupSink) -> Result<Self, BootstrapError> {
+        let document = web_sys::window()
+            .and_then(|window| window.document())
+            .ok_or_else(|| BootstrapError::TargetNotFound("document".to_string()))?;
+        let browser = BrowserDom::new(document);
+        let node = browser.from_web_sys_node(target).map_err(|error| {
+            BootstrapError::Listener(silex_core::SilexError::fatal(
+                silex_core::SilexErrorKind::Dom(error.to_string()),
+            ))
+        })?;
+        Ok(Self::new(browser.context(), node, cleanup_sink))
+    }
+
     /// Create a browser bootstrap for a caller-owned element.
-    pub fn from_element(target: Element, cleanup_sink: CleanupSink) -> Self {
-        Self::new(target.into(), cleanup_sink)
+    pub fn from_element(
+        target: Element,
+        cleanup_sink: CleanupSink,
+    ) -> Result<Self, BootstrapError> {
+        Self::from_web_sys(target.into(), cleanup_sink)
     }
 
     /// Resolve an element by id from the current document.
     pub fn from_id(id: &str, cleanup_sink: CleanupSink) -> Result<Self, BootstrapError> {
-        let target = helpers::try_document()
-            .and_then(|document| document.get_element_by_id(id))
+        let document = web_sys::window()
+            .and_then(|window| window.document())
+            .ok_or_else(|| BootstrapError::TargetNotFound("document".to_string()))?;
+        let browser = BrowserDom::new(document.clone());
+        let target = document
+            .get_element_by_id(id)
             .map(Node::from)
             .ok_or_else(|| BootstrapError::TargetNotFound(id.to_string()))?;
-        Ok(Self::new(target, cleanup_sink))
+        let target = browser.from_web_sys_node(target).map_err(|error| {
+            BootstrapError::Listener(silex_core::SilexError::fatal(
+                silex_core::SilexErrorKind::Dom(error.to_string()),
+            ))
+        })?;
+        Ok(Self::new(browser.context(), target, cleanup_sink))
     }
 
     /// Mount an application through the underlying controller.
     pub fn mount<F>(&mut self, runtime: Runtime, builder: F) -> Result<(), BootstrapError>
     where
-        F: for<'scope> FnOnce(&MountContext<'scope>) -> SilexResult<()>,
+        F: for<'scope> FnOnce(&MountBuilderContext<'scope>) -> SilexResult<()>,
     {
         self.controller.mount(runtime, builder)
     }
@@ -49,7 +76,7 @@ impl BrowserBootstrap {
     /// Dispose the active application and mount a replacement.
     pub fn replace<F>(&mut self, runtime: Runtime, builder: F) -> Result<(), BootstrapError>
     where
-        F: for<'scope> FnOnce(&MountContext<'scope>) -> SilexResult<()>,
+        F: for<'scope> FnOnce(&MountBuilderContext<'scope>) -> SilexResult<()>,
     {
         self.controller.replace(runtime, builder)
     }
@@ -90,7 +117,7 @@ impl BrowserBootstrap {
     }
 
     /// Return the resolved target node.
-    pub fn target(&self) -> Node {
+    pub fn target(&self) -> DomNode {
         self.controller.target()
     }
 

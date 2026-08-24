@@ -16,6 +16,7 @@ silex = { workspace = true, features = [
     "i18n-intl",
     "i18n-macros",
 ] }
+silex_view.workspace = true
 silex_macros.workspace = true
 serde.workspace = true
 serde_json.workspace = true

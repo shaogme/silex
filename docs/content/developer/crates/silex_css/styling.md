@@ -6,8 +6,8 @@ weight = 10
 
 # 类型安全样式与 `Style`
 
-`Style<'scope>` 把一组 CSS 声明表示为可应用到 DOM 元素的 attribute
-operation。它用 `ValidFor<Property>` 在 Rust 编译期限制值类型，用
+`Style<'scope>` 把一组 CSS 声明表示为可应用到 `silex_view::Element` 的
+attribute operation。它用 `ValidFor<Property>` 在 Rust 编译期限制值类型，用
 `CssSource<'scope, T>` 把静态值和 owner 绑定的响应式值统一到 builder 中。
 最终结果不是直接写入 `style="..."` 的整段字符串，而是一个稳定 class、
 静态 CSS 规则和必要的动态绑定。
@@ -26,16 +26,12 @@ let style = sty(ctx)
     .on_hover(|style| style.color(rgb(30, 64, 175)))?;
 ```
 
-`Style` 实现 `ApplyToDom`，所以可以作为 `silex_dom` 元素的 `.apply(...)`
-属性操作。低层 adapter 也可以直接调用：
+`Style` 实现 `silex_view::attribute::ApplyToDom`，所以可以作为 View 元素的
+`.style(...)` 或 `.apply(...)` 属性操作：
 
 ```rust
-let owner_token = MountOwnerToken::new(owner);
-let class_name = style.apply_to_element(
-    &element,
-    &owner_token,
-    error_handler.view(),
-)?;
+let view = Element::with_child("button", "styled").style(style);
+context.mount_unit(view, error_handler)?;
 ```
 
 上面两个片段依赖外层的 mount scope，属于 API 关系说明，不是独立的 CI
@@ -128,7 +124,7 @@ let classes = cx!(
 ```
 
 `cx!` 只负责 class 文本组合，不创建 CSS，也不拥有 cleanup。响应式 class
-应使用 `silex_dom` 的 reactive attribute 或 `tw!`/宏生成的绑定，确保更新
+应使用 `silex_view` 的 reactive attribute 或 `tw!`/宏生成的绑定，确保更新
 和移除属于同一个 owner。
 
 ## 维护边界

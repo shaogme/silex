@@ -1,6 +1,7 @@
 use silex_bootstrap::AppHostError;
 use silex_core::{CloseError, Runtime, SilexError, SilexErrorKind};
-use silex_dom::{CleanupFailure, CleanupOrigin, CleanupReport, DisposeError, MountError};
+use silex_dom::{CleanupFailure, CleanupOrigin, CleanupReport};
+use silex_view::{DisposeError, MountError};
 
 fn cleanup_error() -> CloseError {
     let mut runtime = Runtime::new();

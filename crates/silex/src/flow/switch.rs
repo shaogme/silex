@@ -1,6 +1,6 @@
 use silex_core::{SilexContextProvider, SilexError, SilexErrorKind, reactivity::ReactiveSource};
-use silex_dom::prelude::*;
 use silex_macros::component;
+use silex_view::prelude::*;
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::hash::Hash;

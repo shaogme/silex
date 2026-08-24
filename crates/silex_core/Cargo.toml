@@ -23,14 +23,11 @@ error-i18n-persistence = ["error-i18n", "error-persistence"]
 error-router = []
 error-net = []
 error-intl = []
-error-dom = []
-error-bootstrap = ["error-dom"]
 
 [dependencies]
 silex_reactivity.workspace = true
 silex_rx.workspace = true
 wasm-bindgen.workspace = true
-web-sys = { workspace = true, features = ["console"] }
 wasm-bindgen-futures.workspace = true
 futures-util.workspace = true
 

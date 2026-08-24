@@ -2,9 +2,10 @@
 
 use gloo_timers::future::TimeoutFuture;
 use silex::bootstrap::{AppHost, AppHostError, HostState};
-use silex::dom::{CleanupSink, MountContext, element::Element};
+use silex::dom::CleanupSink;
 use silex::reexports::wasm_bindgen::{JsCast, JsValue};
 use silex::reexports::web_sys::{self, Document, Element as DomElement, HtmlElement, Node};
+use silex::view::{Element, MountBuilderContext};
 use silex::{Runtime, SilexError, SilexErrorKind, SilexResult};
 use silex_counter::{mount_counter, mount_counter_into};
 use wasm_bindgen_test::*;
@@ -90,9 +91,9 @@ fn find_link(target: &DomElement, label: &str) -> HtmlElement {
     panic!("link {label:?} was not found");
 }
 
-fn mount_text<'scope>(ctx: &MountContext<'scope>) -> SilexResult<()> {
+fn mount_text<'scope>(ctx: &MountBuilderContext<'scope>) -> SilexResult<()> {
     let handler = ctx.access().error_handler(|_: SilexError| {})?;
-    ctx.mount(Element::with_child("section", "counter-test"), handler)
+    ctx.mount_unit(Element::with_child("section", "counter-test"), handler)
 }
 
 #[wasm_bindgen_test(async)]
@@ -181,7 +182,7 @@ fn counter_owner_unmounts_after_target_is_removed() {
 fn counter_mount_failure_preserves_error_and_ready_state() {
     let app = target("counter-failure");
     let sink = CleanupSink::new(|report| assert!(report.is_clean()));
-    let mut host = AppHost::new(app.clone().into(), sink);
+    let mut host = AppHost::from_web_sys(app.clone().into(), sink).expect("host should adapt");
 
     let error = host
         .mount(Runtime::new(), |_ctx| {

@@ -1,4 +1,5 @@
 use silex::bootstrap::{BootstrapError, BrowserBootstrap, JsAppHost};
+use silex::dom::CleanupSink;
 use silex::prelude::*;
 use silex::reexports::*;
 
@@ -139,17 +140,17 @@ pub fn mount_error_boundary_demo() -> Result<JsAppHost, BootstrapError> {
 
 /// Mount the error boundary demo into a caller-provided target node.
 pub fn mount_error_boundary_demo_into(target: web_sys::Node) -> Result<JsAppHost, BootstrapError> {
-    let mut bootstrap = BrowserBootstrap::new(target, CleanupSink::console());
+    let mut bootstrap = BrowserBootstrap::from_web_sys(target, CleanupSink::console())?;
     bootstrap.mount(Runtime::new(), mount_error_boundary_demo_view)?;
     bootstrap.into_js_host()
 }
 
-fn mount_error_boundary_demo_view<'scope>(ctx: &MountContext<'scope>) -> SilexResult<()> {
+fn mount_error_boundary_demo_view<'scope>(ctx: &MountBuilderContext<'scope>) -> SilexResult<()> {
     let owner = ctx.access();
     let error_handler = owner.error_handler(|error: SilexError| {
         web_sys::console::error_1(&error.to_string().into());
     })?;
-    ctx.mount(
+    ctx.mount_unit(
         App(SilexContext::new(owner, error_handler.view())).build(),
         error_handler,
     )

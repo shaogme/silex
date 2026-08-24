@@ -1,9 +1,7 @@
 use crate::{AppHost, AppHostError, BootstrapError, HostState, UnmountOutcome};
 use js_sys::{Array, Object, Reflect};
-use silex_core::{
-    CleanupDiagnostic, CleanupPayloadKind, CloseError, SilexError, log::console_error,
-};
-use silex_dom::{CleanupFailure, CleanupOrigin, CleanupReport};
+use silex_core::{CleanupDiagnostic, CleanupPayloadKind, CloseError, SilexError};
+use silex_dom::{CleanupFailure, CleanupOrigin, CleanupReport, log::console_error};
 use std::{
     any::Any,
     panic::{AssertUnwindSafe, catch_unwind},

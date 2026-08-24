@@ -2,7 +2,7 @@
 
 use crate::{
     Callback, CompletionOnce, CompletionSender, ErrorHandlerInput, ErrorHandlerToken, NodeRef, Rx,
-    SilexError, SilexErrorKind, SilexResult, TaskHandle,
+    ScopedSlot, SilexError, SilexErrorKind, SilexResult, TaskHandle,
     reactivity::{
         Computed, EffectHandle, EffectPhase, ReactiveSource, ReadSignal, Signal, StoredValue,
         Transaction, WatchOptions, WriteSignal,
@@ -442,6 +442,13 @@ impl<'owner> OwnerAccess<'owner> {
         self.inner
             .node_ref()
             .map(NodeRef::from_inner)
+            .map_err(SilexError::fatal)
+    }
+
+    pub fn scoped_slot<T: 'owner>(&self) -> SilexResult<ScopedSlot<'owner, T>> {
+        self.inner
+            .node_ref()
+            .map(ScopedSlot::from_inner)
             .map_err(SilexError::fatal)
     }
 

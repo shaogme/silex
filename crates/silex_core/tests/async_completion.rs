@@ -468,7 +468,7 @@ async fn resource_copy_handles_do_not_own_the_child_scope() {
     {
         let first = resource;
         let second = resource;
-        let third = first.clone();
+        let third = first;
         assert!(first.loading().expect("first handle should be readable"));
         assert!(second.loading().expect("second handle should be readable"));
         assert!(third.loading().expect("third handle should be readable"));

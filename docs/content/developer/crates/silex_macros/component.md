@@ -153,7 +153,7 @@ builder 不提供通用属性方法。
 
 1. clone product，并用当前 mount 的 error handler 更新 context 字段；
 2. 调用隐藏 render 函数产生已经完成属性选择的真实 View；
-3. 将真实 View 以 `View::mount(&context)` 挂载。
+3. 将真实 View 以 `context.mount(&view)` 挂载。
 
 只有声明 `#[attrs]` 的 builder 实现属性 builder；普通组件没有隐式属性入口。
 组件调用方可在 `.build()` 前使用 `.attrs(group)`, `.class()`, `.attr()` 和

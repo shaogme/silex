@@ -5,9 +5,7 @@ use silex_core::{
     reactivity::{ReadSignal, StoredValue, WriteSignal},
     traits::RxGet,
 };
-use silex_dom::view::{
-    AnyView, DynamicRenderer, MountContext, MountInstance, View, mount_dynamic_view_universal,
-};
+use silex_view::{AnyView, DynamicRenderer, MountContext, MountInstance, View};
 use std::collections::HashMap;
 use std::rc::Rc;
 use wasm_bindgen::JsCast;
@@ -25,14 +23,11 @@ impl PartialEq for RouterView<'_> {
 impl<'scope> View<'scope> for RouterView<'scope> {
     fn mount(&self, context: &MountContext<'scope>) -> SilexResult<MountInstance<'scope>> {
         let factory = self.0.clone();
-        mount_dynamic_view_universal(
-            context,
-            DynamicRenderer::new(move |args| {
-                let context = args.into_context();
-                let view = factory();
-                view.mount(&context)
-            }),
-        )
+        let renderer = DynamicRenderer::new(move |context| {
+            let view = factory();
+            context.mount(&view)
+        });
+        context.mount(&renderer)
     }
 }
 

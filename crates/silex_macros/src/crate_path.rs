@@ -20,6 +20,7 @@ use syn::Ident;
 /// `crate_name` 每次都要读一遍调用方的 `Cargo.toml`，而一个 rustc 进程只编译一个 crate，
 /// `CARGO_MANIFEST_DIR` 在整个进程生命周期内不变，因此结果可以安全复用。
 static RESOLVED: OnceLock<Option<String>> = OnceLock::new();
+static RESOLVED_VIEW: OnceLock<Option<String>> = OnceLock::new();
 #[cfg(feature = "store")]
 static RESOLVED_CORE: OnceLock<Option<String>> = OnceLock::new();
 
@@ -37,6 +38,27 @@ pub fn silex() -> TokenStream {
             Ok(proc_macro_crate::FoundCrate::Name(name)) => Some(name),
             Err(_) => Some("silex".to_string()),
         },
+    });
+
+    match resolved {
+        Some(name) => {
+            let ident = Ident::new(name, Span::call_site());
+            quote!(::#ident)
+        }
+        None => quote!(crate),
+    }
+}
+
+/// 展开中引用新的 View crate。
+///
+/// View 不是 facade 的隐式模块：宏生成的 View、属性和事件 bound 必须指向
+/// `silex_view` 本身。`proc_macro_crate` 同时覆盖默认依赖名和
+/// `package = "silex_view"` 的 renamed dependency。
+pub fn silex_view() -> TokenStream {
+    let resolved = RESOLVED_VIEW.get_or_init(|| match proc_macro_crate::crate_name("silex_view") {
+        Ok(proc_macro_crate::FoundCrate::Itself) => None,
+        Ok(proc_macro_crate::FoundCrate::Name(name)) => Some(name),
+        Err(_) => Some("silex_view".to_string()),
     });
 
     match resolved {

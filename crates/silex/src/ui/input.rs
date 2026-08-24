@@ -1,7 +1,7 @@
 use silex_core::prelude::*;
-use silex_dom::prelude::*;
 use silex_html::input;
 use silex_macros::{component, tw};
+use silex_view::prelude::*;
 
 #[component]
 pub fn Input<'scope, Ctx>(
@@ -47,16 +47,10 @@ pub fn Input<'scope, Ctx>(
         .attr("placeholder", rx!(ctx; $placeholder.clone())?)
         .prop("value", rx!(ctx; $value.clone())?)
         .class(input_cls)
-        .on(
-            event::input,
-            move |e: web_sys::InputEvent| -> SilexResult<()> {
-                if let Some(target) = e.target()
-                    && let Ok(input_el) =
-                        wasm_bindgen::JsCast::dyn_into::<web_sys::HtmlInputElement>(target)
-                {
-                    on_input.invoke(input_el.value())?;
-                }
-                Ok(())
-            },
-        ))
+        .on(event::input, move |e: DomEvent| -> SilexResult<()> {
+            if let Some(value) = e.input_value() {
+                on_input.invoke(value)?;
+            }
+            Ok(())
+        }))
 }

@@ -3,16 +3,15 @@ use crate::{
     source::{CssSource, IntoCssSource},
 };
 use silex_core::{EffectPhase, RxGet, SilexError, SilexErrorKind, SilexResult};
-use silex_dom::{
+use silex_dom::{DomContext, DomElement};
+use silex_view::{
+    MountContext, MountErrorHandler, MountOwner,
     attribute::{ApplyTarget, ApplyToDom, AttrOp, IntoStorable},
-    view::{MountContext, MountErrorHandler, MountOwner},
 };
 use std::{
     fmt::{Display, Write},
     rc::Rc,
 };
-use wasm_bindgen::JsCast;
-use web_sys::{CssStyleDeclaration, Element, HtmlElement, SvgElement};
 
 /// A trait that every Silex Theme must implement.
 /// This allows the `styled!` macro to perform compile-time type checks.
@@ -38,17 +37,20 @@ pub trait ThemeToCss: Display {
 /// `names.iter().zip(values.iter())`——两个列表长度不一致时**静默截断**，
 /// 少写的那几个变量不会有任何提示。
 fn apply_var_diff(
-    style: &CssStyleDeclaration,
+    dom: &DomContext,
+    element: &DomElement,
     entries: &[(&'static str, Option<String>)],
     prev: Option<&Vec<(&'static str, Option<String>)>>,
 ) -> SilexResult<Vec<(&'static str, Option<String>)>> {
     for write in var_writes(entries, prev) {
         match write {
             VarWrite::Set(name, value) => {
-                style.set_property(name, value).map_err(SilexError::fatal)?;
+                dom.set_style_property(element, name, Some(value))
+                    .map_err(|error| SilexError::fatal(SilexErrorKind::Dom(error.to_string())))?;
             }
             VarWrite::Remove(name) => {
-                style.remove_property(name).map_err(SilexError::fatal)?;
+                dom.set_style_property(element, name, None)
+                    .map_err(|error| SilexError::fatal(SilexErrorKind::Dom(error.to_string())))?;
             }
         }
     }
@@ -91,13 +93,6 @@ fn var_writes<'a>(
     out
 }
 
-/// 元素上可写的 style 对象（HTML 与 SVG 两条路）。
-fn element_style(el: &Element) -> Option<CssStyleDeclaration> {
-    el.dyn_ref::<HtmlElement>()
-        .map(|e| e.style())
-        .or_else(|| el.dyn_ref::<SvgElement>().map(|e| e.style()))
-}
-
 /// 把主题的当前取值配成 `(变量名, 值)`。
 fn theme_entries<T: ThemeToCss>(theme: &T) -> SilexResult<Vec<(&'static str, Option<String>)>> {
     let names = T::get_variable_names();
@@ -133,45 +128,43 @@ where
 {
     fn apply(
         &self,
-        el: &Element,
+        element: &DomElement,
         _target: ApplyTarget,
         context: &MountContext<'scope>,
     ) -> SilexResult<()> {
         let owner = context.owner();
         let error_handler = context.error_handler();
         let theme = self.0.clone();
-        let el = el.clone();
-        let effect_el = el.clone();
-        owner.effect_with_previous(EffectPhase::Normal, Box::new(
-                move |previous: Option<&Vec<(&'static str, Option<String>)>>| -> SilexResult<
-                    Vec<(&'static str, Option<String>)>,
-                > {
-                let theme = match &theme {
-                    CssSource::Static(theme) => theme.clone(),
-                    CssSource::Reactive(rx) => rx.get()?,
-                };
-                let Some(style) = element_style(&effect_el) else {
-                    return Err(SilexError::fatal(SilexErrorKind::Dom("element does not expose a style declaration".to_string())));
-                };
-                let entries = theme_entries(&theme)?;
-                apply_var_diff(&style, &entries, previous)
-            },
+        let dom = context.dom().clone();
+        let dom_for_effect = dom.clone();
+        let element_for_effect = element.clone();
+        owner.effect_with_previous(
+            EffectPhase::Normal,
+            Box::new(
+                move |previous: Option<&Vec<(&'static str, Option<String>)>>| {
+                    let theme = match &theme {
+                        CssSource::Static(theme) => theme.clone(),
+                        CssSource::Reactive(rx) => rx.get()?,
+                    };
+                    let entries = theme_entries(&theme)?;
+                    apply_var_diff(&dom_for_effect, &element_for_effect, &entries, previous)
+                },
             ),
             error_handler,
         )?;
         let names = T::get_variable_names().to_vec();
-        let el_clone = el.clone();
+        let dom_for_cleanup = dom;
+        let element_for_cleanup = element.clone();
         owner.on_cleanup(
-            Box::new(move || -> SilexResult<()> {
-                let mut first_error = None;
-                if let Some(style) = element_style(&el_clone) {
-                    for name in &names {
-                        if let Err(error) = style.remove_property(name) {
-                            first_error.get_or_insert_with(|| SilexError::fatal(error));
-                        }
-                    }
+            Box::new(move || {
+                for name in &names {
+                    dom_for_cleanup
+                        .set_style_property(&element_for_cleanup, name, None)
+                        .map_err(|error| {
+                            SilexError::fatal(SilexErrorKind::Dom(error.to_string()))
+                        })?;
                 }
-                first_error.map_or(Ok(()), Err)
+                Ok(())
             }),
             error_handler,
         )?;
@@ -179,7 +172,7 @@ where
     }
 
     fn into_op(self, _target: ApplyTarget) -> AttrOp<'scope> {
-        AttrOp::on_commit(move |el, context| self.apply(el, ApplyTarget::Apply, context))
+        AttrOp::on_commit(move |element, context| self.apply(element, ApplyTarget::Apply, context))
     }
 }
 
@@ -284,31 +277,29 @@ where
 {
     fn apply(
         &self,
-        el: &Element,
+        element: &DomElement,
         _target: ApplyTarget,
         context: &MountContext<'scope>,
     ) -> SilexResult<()> {
         let owner = context.owner();
         let error_handler = context.error_handler();
         let patch = self.0.clone();
-        let el = el.clone();
-        let effect_el = el.clone();
+        let dom = context.dom().clone();
+        let dom_for_effect = dom.clone();
+        let element_for_effect = element.clone();
         let names = owner.owner_state(Vec::<&'static str>::new())?;
         let names_for_effect = names.clone();
-        owner.effect_with_previous(EffectPhase::Normal, Box::new(
-                move |previous: Option<&Vec<(&'static str, Option<String>)>>| -> SilexResult<
-                    Vec<(&'static str, Option<String>)>,
-                > {
-                let patch = match &patch {
-                    CssSource::Static(patch) => patch.clone(),
-                    CssSource::Reactive(rx) => rx.get()?,
-                };
-                let entries = patch.get_patch_entries();
-                let next = {
-                    let Some(style) = element_style(&effect_el) else {
-                        return Err(SilexError::fatal(SilexErrorKind::Dom("element does not expose a style declaration".to_string())));
+        owner.effect_with_previous(
+            EffectPhase::Normal,
+            Box::new(
+                move |previous: Option<&Vec<(&'static str, Option<String>)>>| {
+                    let patch = match &patch {
+                        CssSource::Static(patch) => patch.clone(),
+                        CssSource::Reactive(rx) => rx.get()?,
                     };
-                    let next = apply_var_diff(&style, &entries, previous)?;
+                    let entries = patch.get_patch_entries();
+                    let next =
+                        apply_var_diff(&dom_for_effect, &element_for_effect, &entries, previous)?;
                     names_for_effect.update(|names| {
                         for (name, _) in &entries {
                             if !names.contains(name) {
@@ -316,27 +307,25 @@ where
                             }
                         }
                     })?;
-                    next
-                };
-                Ok(next)
-            },
+                    Ok(next)
+                },
             ),
             error_handler,
         )?;
         let names_for_cleanup = names.clone();
-        let el_clone = el.clone();
+        let dom_for_cleanup = dom;
+        let element_for_cleanup = element.clone();
         owner.on_cleanup(
-            Box::new(move || -> SilexResult<()> {
-                let mut first_error = None;
-                if let Some(style) = element_style(&el_clone) {
-                    let names = names_for_cleanup.take_for_cleanup().unwrap_or_default();
-                    for name in &names {
-                        if let Err(error) = style.remove_property(name) {
-                            first_error.get_or_insert_with(|| SilexError::fatal(error));
-                        }
-                    }
+            Box::new(move || {
+                let names = names_for_cleanup.take_for_cleanup().unwrap_or_default();
+                for name in &names {
+                    dom_for_cleanup
+                        .set_style_property(&element_for_cleanup, name, None)
+                        .map_err(|error| {
+                            SilexError::fatal(SilexErrorKind::Dom(error.to_string()))
+                        })?;
                 }
-                first_error.map_or(Ok(()), Err)
+                Ok(())
             }),
             error_handler,
         )?;

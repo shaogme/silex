@@ -1,4 +1,4 @@
-use silex_dom::view::AnyView;
+use silex_view::AnyView;
 use silex_html::input;
 
 fn main() {

@@ -1,13 +1,14 @@
 #![cfg(all(target_arch = "wasm32", feature = "browser-tests"))]
 
 use gloo_timers::future::TimeoutFuture;
-use silex_core::{ErrorHandlerToken, OwnerAccess, Runtime, RxGet, SilexContext};
-use silex_dom::view::{MountContext, MountOwnerToken, View};
+use silex_core::{ErrorHandlerInput, ErrorHandlerToken, OwnerAccess, Runtime, RxGet, SilexContext};
+use silex_dom::browser::BrowserDom;
 use silex_i18n::{Catalog, I18nBuilder, Locale, detect_browser_locale, t};
 #[cfg(feature = "intl")]
 use silex_i18n::{DateTimeFormat, format_number};
 #[cfg(feature = "persist")]
 use silex_router::{RouterContext, RouterContextProps};
+use silex_view::{MountContext, MountOwnerToken};
 use wasm_bindgen_test::*;
 #[cfg(feature = "persist")]
 use web_sys::StorageEvent;
@@ -279,10 +280,19 @@ async fn translated_memo_updates_the_existing_text_node() {
             .create_element("div")
             .expect("parent element");
         let (owner, error_handler) = test_owner(owner);
-        let context = MountContext::for_parent(parent.clone().into(), owner, error_handler.view());
-        let _mount = t!(i18n, "title")
-            .expect("translation")
-            .mount(&context)
+        let browser = BrowserDom::from_window().expect("browser backend");
+        let parent_node = browser
+            .from_web_sys_node(parent.clone().into())
+            .expect("parent should be a DOM node");
+        let context = MountContext::for_parent(
+            browser.context(),
+            parent_node,
+            owner,
+            error_handler.handler_ref(),
+        );
+        let translation = t!(i18n, "title").expect("translation");
+        let _mount = context
+            .mount(&translation)
             .expect("translation should mount");
         context
             .transaction()
@@ -324,10 +334,19 @@ fn translated_memo_is_removed_when_its_root_is_disposed() {
             .build()
             .expect("valid i18n store");
         let (owner, error_handler) = test_owner(owner);
-        let context = MountContext::for_parent(parent.clone().into(), owner, error_handler.view());
-        let _mount = t!(i18n, "title")
-            .expect("translation")
-            .mount(&context)
+        let browser = BrowserDom::from_window().expect("browser backend");
+        let parent_node = browser
+            .from_web_sys_node(parent.clone().into())
+            .expect("parent should be a DOM node");
+        let context = MountContext::for_parent(
+            browser.context(),
+            parent_node,
+            owner,
+            error_handler.handler_ref(),
+        );
+        let translation = t!(i18n, "title").expect("translation");
+        let _mount = context
+            .mount(&translation)
             .expect("translation should mount");
         context
             .transaction()
@@ -369,8 +388,17 @@ fn foreign_translation_source_does_not_mount_or_allocate_foreign_owner_nodes() {
         let foreign_scope = foreign_root.access();
         let translation = t!(i18n, "title").expect("translation");
         let (owner, error_handler) = test_owner(foreign_scope);
-        let context = MountContext::for_parent(parent.clone().into(), owner, error_handler.view());
-        assert!(translation.mount(&context).is_err());
+        let browser = BrowserDom::from_window().expect("browser backend");
+        let parent_node = browser
+            .from_web_sys_node(parent.clone().into())
+            .expect("parent should be a DOM node");
+        let context = MountContext::for_parent(
+            browser.context(),
+            parent_node,
+            owner,
+            error_handler.handler_ref(),
+        );
+        assert!(context.mount(&translation).is_err());
     }
 
     assert!(parent.first_child().is_none());

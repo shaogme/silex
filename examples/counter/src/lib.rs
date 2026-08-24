@@ -1,4 +1,5 @@
 use silex::bootstrap::{BootstrapError, BrowserBootstrap, JsAppHost};
+use silex::dom::CleanupSink;
 use silex::prelude::*;
 use silex::reexports::*;
 
@@ -225,8 +226,8 @@ fn HomeView<'scope>(#[ctx] ctx: RouterContext<'scope>) -> impl View<'scope> {
                             .width(pct(100))?
                     )
                     .value(name)
-                    .on_input(move |val| {
-                        name.set(val)?;
+                    .on(event::input, move |event: DomEvent| {
+                        name.set(event.input_value().unwrap_or_default())?;
                         Ok(())
                     })
             )))
@@ -404,12 +405,12 @@ pub fn mount_counter() -> Result<JsAppHost, BootstrapError> {
 
 /// Mount the counter application into a caller-provided target node.
 pub fn mount_counter_into(target: web_sys::Node) -> Result<JsAppHost, BootstrapError> {
-    let mut bootstrap = BrowserBootstrap::new(target, CleanupSink::console());
+    let mut bootstrap = BrowserBootstrap::from_web_sys(target, CleanupSink::console())?;
     bootstrap.mount(Runtime::new(), mount_counter_view)?;
     bootstrap.into_js_host()
 }
 
-fn mount_counter_view<'scope>(ctx: &MountContext<'scope>) -> SilexResult<()> {
+fn mount_counter_view<'scope>(ctx: &MountBuilderContext<'scope>) -> SilexResult<()> {
     let owner = ctx.access();
     let root_error = owner.signal(None::<SilexError>)?;
     let error_handler = owner.error_handler(move |error: SilexError| {
@@ -417,5 +418,5 @@ fn mount_counter_view<'scope>(ctx: &MountContext<'scope>) -> SilexResult<()> {
     })?;
     let silex_ctx = SilexContext::new(owner, error_handler.view());
     let app = App(silex_ctx, root_error).build();
-    ctx.mount(app, error_handler)
+    ctx.mount_unit(app, error_handler)
 }

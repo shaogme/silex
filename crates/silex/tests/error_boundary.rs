@@ -4,13 +4,12 @@ use std::{cell::Cell, rc::Rc};
 
 use silex::components::ErrorBoundary;
 use silex_core::{
-    EffectPhase, ErrorHandlerToken, ErrorReporter, OwnerAccess, ReadSignal, Runtime, RxGet,
-    SilexContext, SilexError, SilexErrorKind, SilexResult,
+    EffectPhase, ErrorHandlerInput, ErrorHandlerToken, ErrorReporter, OwnerAccess, ReadSignal,
+    Runtime, RxGet, SilexContext, SilexError, SilexErrorKind, SilexResult,
 };
-use silex_dom::document;
-use silex_dom::view::{MountContext, MountInstance, MountOwnerToken, View};
+use silex_dom::browser::BrowserDom;
+use silex_view::{MountContext, MountInstance, MountOwnerToken, View};
 use wasm_bindgen_test::*;
-use web_sys::Node;
 
 #[path = "error_boundary/support.rs"]
 mod support;
@@ -21,6 +20,13 @@ use support::{
 };
 
 wasm_bindgen_test_configure!(run_in_browser);
+
+fn document() -> web_sys::Document {
+    web_sys::window()
+        .expect("browser tests have a window")
+        .document()
+        .expect("browser tests have a document")
+}
 
 #[derive(Clone)]
 struct InitialFailure;
@@ -54,16 +60,25 @@ struct DeferredFailure<'scope> {
 
 impl<'scope> View<'scope> for DeferredFailure<'scope> {
     fn mount(&self, context: &MountContext<'scope>) -> SilexResult<MountInstance<'scope>> {
-        let node = document().create_text_node("child");
-        context.target().append(&node)?;
-        let node: Node = node.into();
+        let node = context
+            .dom()
+            .create_text("child")
+            .map_err(|error| SilexError::fatal(SilexErrorKind::Dom(error.to_string())))?;
+        context.target().append_node(&node)?;
         let node_for_cleanup = node.clone();
+        let dom_for_cleanup = context.dom().clone();
         let cleanup_count = self.cleanup_count.clone();
         context.owner().on_cleanup(
             Box::new(move || {
                 cleanup_count.set(cleanup_count.get().saturating_add(1));
-                if let Some(parent) = node_for_cleanup.parent_node() {
-                    let _ = parent.remove_child(&node_for_cleanup);
+                if dom_for_cleanup
+                    .parent(&node_for_cleanup)
+                    .map_err(|error| SilexError::fatal(SilexErrorKind::Dom(error.to_string())))?
+                    .is_some()
+                {
+                    dom_for_cleanup.remove(&node_for_cleanup).map_err(|error| {
+                        SilexError::fatal(SilexErrorKind::Dom(error.to_string()))
+                    })?;
                 }
                 Ok(())
             }),
@@ -151,11 +166,20 @@ fn test_owner<'scope>(
 fn mount_view<'scope, V: View<'scope>>(
     view: &V,
     owner: &MountOwnerToken<'scope>,
-    parent: &Node,
-    error_handler: ErrorReporter<'scope>,
+    parent: &web_sys::Node,
+    error_handler: &ErrorHandlerToken<'scope>,
 ) -> SilexResult<MountInstance<'scope>> {
-    let context = MountContext::for_parent(parent.clone(), owner.clone(), error_handler);
-    let instance = view.mount(&context)?;
+    let browser = BrowserDom::new(document());
+    let parent = browser
+        .from_web_sys_node(parent.clone())
+        .map_err(|error| SilexError::fatal(SilexErrorKind::Dom(error.to_string())))?;
+    let context = MountContext::for_parent(
+        browser.context(),
+        parent,
+        owner.clone(),
+        error_handler.handler_ref(),
+    );
+    let instance = context.mount(view)?;
     context.transaction().commit()?;
     Ok(instance)
 }
@@ -174,7 +198,7 @@ fn initial_child_error_switches_to_fallback_without_parent_dispatch() {
                 .fallback(|error| format!("fallback: {error}"))
                 .build();
 
-            let _ = mount_view(&view, &mount_owner, host.as_ref(), error_handler.view())
+            let _ = mount_view(&view, &mount_owner, host.as_ref(), &error_handler)
                 .expect("initial child error should be recovered by the boundary");
             assert_eq!(
                 host.text_content().as_deref(),
@@ -215,7 +239,7 @@ async fn deferred_child_error_reaches_boundary_and_disposes_child() {
             })
             .build();
 
-        let _ = mount_view(&view, &mount_owner, host.as_ref(), error_handler.view())
+        let _ = mount_view(&view, &mount_owner, host.as_ref(), &error_handler)
             .expect("child should mount before it fails");
         assert_eq!(host.text_content().as_deref(), Some("child"));
         owner
@@ -279,7 +303,7 @@ async fn child_factory_handler_reaches_boundary_fallback() {
         .fallback(|error| format!("boundary: {error}"))
         .build();
 
-        let _ = mount_view(&view, &mount_owner, host.as_ref(), error_handler.view())
+        let _ = mount_view(&view, &mount_owner, host.as_ref(), &error_handler)
             .expect("child handler failure should be deferred");
     });
 
@@ -315,7 +339,7 @@ async fn repeated_deferred_errors_keep_the_first_generation() {
         })
         .build();
 
-        let _ = mount_view(&view, &mount_owner, host.as_ref(), error_handler.view())
+        let _ = mount_view(&view, &mount_owner, host.as_ref(), &error_handler)
             .expect("repeated child errors should be deferred");
     });
 
@@ -359,7 +383,7 @@ async fn fallback_mount_error_reaches_parent_handler() {
         })
         .build();
 
-        let _ = mount_view(&view, &mount_owner, host.as_ref(), error_handler.view())
+        let _ = mount_view(&view, &mount_owner, host.as_ref(), &error_handler)
             .expect("fallback failure should be reported asynchronously");
     });
 
@@ -409,7 +433,7 @@ async fn root_close_during_pending_error_does_not_mount_fallback() {
             })
             .build();
 
-        let _ = mount_view(&view, &mount_owner, host.as_ref(), error_handler.view())
+        let _ = mount_view(&view, &mount_owner, host.as_ref(), &error_handler)
             .expect("child should mount before root close");
         owner
             .spawn_scoped(

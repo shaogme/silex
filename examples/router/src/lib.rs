@@ -1,4 +1,5 @@
 use silex::bootstrap::{BootstrapError, BrowserBootstrap, JsAppHost};
+use silex::dom::CleanupSink;
 use silex::prelude::*;
 use silex::reexports::*;
 
@@ -404,7 +405,7 @@ pub fn mount_router() -> Result<JsAppHost, BootstrapError> {
 
 /// Mount the Router demo into a caller-provided target node.
 pub fn mount_router_into(target: web_sys::Node) -> Result<JsAppHost, BootstrapError> {
-    let mut bootstrap = BrowserBootstrap::new(target, CleanupSink::console());
+    let mut bootstrap = BrowserBootstrap::from_web_sys(target, CleanupSink::console())?;
     inject_router_styles();
     bootstrap.mount(Runtime::new(), mount_router_view)?;
     bootstrap.into_js_host()
@@ -420,11 +421,11 @@ fn inject_router_styles() {
     };
 }
 
-fn mount_router_view<'scope>(ctx: &MountContext<'scope>) -> SilexResult<()> {
+fn mount_router_view<'scope>(ctx: &MountBuilderContext<'scope>) -> SilexResult<()> {
     let owner = ctx.access();
     let error_handler = owner.error_handler(|error: SilexError| {
         web_sys::console::error_1(&error.to_string().into());
     })?;
     let silex_ctx = SilexContext::new(owner, error_handler.view());
-    ctx.mount(App(silex_ctx).build(), error_handler)
+    ctx.mount_unit(App(silex_ctx).build(), error_handler)
 }

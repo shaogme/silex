@@ -1,6 +1,6 @@
 use silex_core::reactivity::ReactiveSource;
-use silex_dom::prelude::*;
 use silex_macros::component;
+use silex_view::prelude::*;
 
 /// Dynamic 组件：用于渲染动态内容，类似于 SolidJS 的 <Dynamic>
 ///

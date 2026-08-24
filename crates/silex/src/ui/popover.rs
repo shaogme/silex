@@ -1,9 +1,8 @@
 use crate::components::{Portal, PortalHostAttrs};
 use silex_core::prelude::*;
-use silex_dom::prelude::*;
 use silex_html::{div, p};
 use silex_macros::{component, tw};
-use wasm_bindgen::JsCast;
+use silex_view::prelude::*;
 
 /// Explicit Popover Context holding reactive state for visibility and anchor bounds.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -22,16 +21,14 @@ impl<'scope> PopoverContext<'scope> {
         })
     }
 
-    pub fn update_anchor_from_element(&self, el: &web_sys::Element) -> SilexResult<()> {
-        let rect = el.get_bounding_client_rect();
+    pub fn update_anchor_from_rect(&self, rect: DomRectData) -> SilexResult<()> {
         self.anchor_rect
             .set((rect.top(), rect.left(), rect.width(), rect.height()))
     }
 
-    pub fn update_content_from_element(&self, el: &web_sys::Element) -> SilexResult<()> {
-        let rect = el.get_bounding_client_rect();
-        if rect.height() > 0.0 {
-            self.content_height.set(rect.height())
+    pub fn update_content_height(&self, height: f64) -> SilexResult<()> {
+        if height > 0.0 {
+            self.content_height.set(height)
         } else {
             Ok(())
         }
@@ -141,18 +138,12 @@ pub fn PopoverAnchor<'scope, Ctx>(
     Ok(div(children)
         .attr("data-slot", "popover-anchor")
         .class(anchor_cls)
-        .on(
-            event::click,
-            move |e: web_sys::MouseEvent| -> SilexResult<()> {
-                let target = e.current_target().or_else(|| e.target());
-                if let Some(target) = target
-                    && let Ok(el) = target.dyn_into::<web_sys::Element>()
-                {
-                    context.update_anchor_from_element(&el)?;
-                }
-                Ok(())
-            },
-        ))
+        .on(event::click, move |e: DomEvent| -> SilexResult<()> {
+            if let Some(rect) = e.rect() {
+                context.update_anchor_from_rect(rect)?;
+            }
+            Ok(())
+        }))
 }
 
 #[component]
@@ -392,19 +383,13 @@ pub fn PopoverTrigger<'scope, Ctx>(
     Ok(div(children)
         .attr("data-slot", "popover-trigger")
         .class(trigger_cls)
-        .on(
-            event::click,
-            move |e: web_sys::MouseEvent| -> SilexResult<()> {
-                let target = e.current_target().or_else(|| e.target());
-                if let Some(target) = target
-                    && let Ok(el) = target.dyn_into::<web_sys::Element>()
-                {
-                    context.update_anchor_from_element(&el)?;
-                }
-                context.toggle()?;
-                on_click.invoke(())
-            },
-        ))
+        .on(event::click, move |e: DomEvent| -> SilexResult<()> {
+            if let Some(rect) = e.rect() {
+                context.update_anchor_from_rect(rect)?;
+            }
+            context.toggle()?;
+            on_click.invoke(())
+        }))
 }
 
 #[component]

@@ -4,7 +4,8 @@ use silex_bootstrap::{
     BootstrapError, BrowserBootstrap, JsAppHost, LifecycleReporter, PageLifecyclePolicy,
 };
 use silex_core::{Runtime, SilexError, SilexResult};
-use silex_dom::{CleanupSink, MountContext, element::Element};
+use silex_dom::CleanupSink;
+use silex_view::{Element, MountBuilderContext};
 use std::rc::Rc;
 use wasm_bindgen_test::*;
 use web_sys::{Element as DomElement, Node};
@@ -37,9 +38,9 @@ fn detach(target: &Node) {
     }
 }
 
-fn mount_text<'scope>(ctx: &MountContext<'scope>) -> SilexResult<()> {
+fn mount_text<'scope>(ctx: &MountBuilderContext<'scope>) -> SilexResult<()> {
     let handler = ctx.access().error_handler(|_: SilexError| {})?;
-    ctx.mount(Element::with_child("section", "browser-owner"), handler)
+    ctx.mount_unit(Element::with_child("section", "browser-owner"), handler)
 }
 
 fn reporter() -> LifecycleReporter {
@@ -85,7 +86,8 @@ fn missing_id_is_reported_without_a_partial_controller() {
 #[wasm_bindgen_test]
 fn removing_page_lifecycle_allows_manual_js_owner_transfer() {
     let target = element("phase-four-transfer");
-    let mut bootstrap = BrowserBootstrap::from_element(target.clone(), CleanupSink::console());
+    let mut bootstrap = BrowserBootstrap::from_element(target.clone(), CleanupSink::console())
+        .expect("browser adapter");
     bootstrap
         .mount(Runtime::new(), mount_text)
         .expect("browser bootstrap should mount");
@@ -109,7 +111,8 @@ fn removing_page_lifecycle_allows_manual_js_owner_transfer() {
 #[wasm_bindgen_test]
 fn non_manual_policy_cannot_transfer_listener_ownership_implicitly() {
     let target = element("phase-four-policy");
-    let mut bootstrap = BrowserBootstrap::from_element(target.clone(), CleanupSink::console());
+    let mut bootstrap = BrowserBootstrap::from_element(target.clone(), CleanupSink::console())
+        .expect("browser adapter");
     bootstrap
         .mount(Runtime::new(), mount_text)
         .expect("browser bootstrap should mount");

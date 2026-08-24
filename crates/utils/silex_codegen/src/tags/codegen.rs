@@ -9,33 +9,6 @@ pub enum TagNamespace {
     Svg,
 }
 
-fn dom_type(namespace: TagNamespace, tag_name: &str) -> &'static str {
-    match namespace {
-        TagNamespace::Svg => match tag_name {
-            "a" => "web_sys::SvgaElement",
-            _ => "web_sys::SvgElement",
-        },
-        TagNamespace::Html => match tag_name {
-            "input" => "web_sys::HtmlInputElement",
-            "button" => "web_sys::HtmlButtonElement",
-            "textarea" => "web_sys::HtmlTextAreaElement",
-            "select" => "web_sys::HtmlSelectElement",
-            "option" => "web_sys::HtmlOptionElement",
-            "optgroup" => "web_sys::HtmlOptGroupElement",
-            "form" => "web_sys::HtmlFormElement",
-            "a" => "web_sys::HtmlAnchorElement",
-            "img" => "web_sys::HtmlImageElement",
-            "canvas" => "web_sys::HtmlCanvasElement",
-            "audio" => "web_sys::HtmlAudioElement",
-            "video" => "web_sys::HtmlVideoElement",
-            "dialog" => "web_sys::HtmlDialogElement",
-            "details" => "web_sys::HtmlDetailsElement",
-            "iframe" => "web_sys::HtmlIFrameElement",
-            _ => "web_sys::HtmlElement",
-        },
-    }
-}
-
 pub fn generate_module_content(
     tags: &[TagDef],
     namespace: TagNamespace,
@@ -46,9 +19,9 @@ pub fn generate_module_content(
         TagNamespace::Html => "html",
         TagNamespace::Svg => "svg",
     };
-    let method_name = match namespace {
-        TagNamespace::Html => "new",
-        TagNamespace::Svg => "new_svg",
+    let namespace_name = match namespace {
+        TagNamespace::Html => "html",
+        TagNamespace::Svg => "svg",
     };
 
     // --- Tags ---
@@ -62,12 +35,10 @@ pub fn generate_module_content(
         let kind = if tag.is_void { "void" } else { "non_void" };
         let trait_list = tag.traits.join(", ");
 
-        let dom_type = dom_type(namespace, &tag.tag_name);
-
         // Generate define_tag! macro call
         code.push_str(&format!(
-            "#[rustfmt::skip] silex_dom::define_tag!({}, {}, \"{}\", {}, {}, {}, [{}]);\n",
-            tag.struct_name, dom_type, tag.tag_name, fn_name, method_name, kind, trait_list
+            "#[rustfmt::skip] silex_view::define_tag!({}, \"{}\", {}, {}, {}, [{}]);\n",
+            tag.struct_name, tag.tag_name, namespace_name, fn_name, kind, trait_list
         ));
     }
 
@@ -108,7 +79,7 @@ pub fn generate_module_content(
 #[cfg(test)]
 mod tests {
     use super::super::TagDef;
-    use super::{TagNamespace, dom_type, generate_module_content};
+    use super::{TagNamespace, generate_module_content};
 
     fn anchor_tag(struct_name: &str) -> TagDef {
         TagDef {
@@ -121,34 +92,14 @@ mod tests {
     }
 
     #[test]
-    fn svg_anchor_uses_svg_anchor_dom_type() {
-        assert_eq!(dom_type(TagNamespace::Svg, "a"), "web_sys::SvgaElement");
-    }
-
-    #[test]
-    fn html_anchor_keeps_html_anchor_dom_type() {
-        assert_eq!(
-            dom_type(TagNamespace::Html, "a"),
-            "web_sys::HtmlAnchorElement"
-        );
-    }
-
-    #[test]
-    fn namespace_controls_fallback_dom_type() {
-        assert_eq!(dom_type(TagNamespace::Svg, "path"), "web_sys::SvgElement");
-        assert_eq!(
-            dom_type(TagNamespace::Html, "section"),
-            "web_sys::HtmlElement"
-        );
-    }
-
-    #[test]
-    fn generated_anchor_types_follow_their_namespace() {
+    fn generated_tags_only_contain_view_metadata() {
         let html = generate_module_content(&[anchor_tag("A")], TagNamespace::Html, &[]);
         let svg = generate_module_content(&[anchor_tag("SvgA")], TagNamespace::Svg, &[]);
 
-        assert!(html.contains("web_sys::HtmlAnchorElement"));
-        assert!(svg.contains("web_sys::SvgaElement"));
+        assert!(html.contains("silex_view::define_tag!(A, \"a\", html, a, non_void"));
+        assert!(svg.contains("silex_view::define_tag!(SvgA, \"a\", svg, svg_a, non_void"));
+        assert!(!html.contains("web_sys"));
+        assert!(!svg.contains("web_sys"));
     }
 
     #[test]

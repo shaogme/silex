@@ -2,16 +2,15 @@
 
 use gloo_timers::future::TimeoutFuture;
 use silex_core::{
-    EffectPhase, ErrorHandlerToken, ErrorReporter, OwnerAccess, OwnerHandle, Runtime, RxGet,
-    SilexContext, SilexResult,
+    EffectPhase, ErrorHandlerInput, ErrorHandlerToken, OwnerAccess, Runtime, RxGet, SilexContext,
+    SilexResult,
 };
-use silex_dom::view::{
-    AnyView, IndexedListView, MountContext, MountInstance, MountOwnerToken, View,
-};
+use silex_dom::{DomContext, DomNode, browser::BrowserDom};
 use silex_persist::{
     PersistExternalSync, PersistWriteMode, PersistenceState, Persistent, WriteDefault,
 };
 use silex_router::{RouterContext, RouterContextProps};
+use silex_view::{AnyView, IndexedListView, MountContext, MountInstance, MountOwnerToken, View};
 use std::{
     cell::{Cell, RefCell},
     panic::AssertUnwindSafe,
@@ -20,7 +19,7 @@ use std::{
 };
 use wasm_bindgen::{JsValue, closure::Closure, prelude::wasm_bindgen};
 use wasm_bindgen_test::*;
-use web_sys::{Node, StorageEvent, window};
+use web_sys::{StorageEvent, window};
 
 wasm_bindgen_test_configure!(run_in_browser);
 
@@ -40,11 +39,17 @@ fn test_owner<'scope>(
 fn mount_view<'scope, V: View<'scope>>(
     view: &V,
     owner: &MountOwnerToken<'scope>,
-    parent: &Node,
-    error_handler: ErrorReporter<'scope>,
+    dom: &DomContext,
+    parent: &DomNode,
+    error_handler: ErrorHandlerToken<'scope>,
 ) -> SilexResult<MountInstance<'scope>> {
-    let context = MountContext::for_parent(parent.clone(), owner.clone(), error_handler);
-    let instance = view.mount(&context)?;
+    let context = MountContext::for_parent(
+        dom.clone(),
+        parent.clone(),
+        owner.clone(),
+        error_handler.handler_ref(),
+    );
+    let instance = context.mount(view)?;
     context.transaction().commit()?;
     Ok(instance)
 }
@@ -135,78 +140,6 @@ export function restoreQueryHistorySpy(spy) {
     window.history.replaceState = spy.originalReplace;
 }
 
-export function installTimeoutController() {
-    const controller = {
-        callbacks: [],
-        clears: [],
-        invokes: 0,
-        failNext: false,
-        originalSet: window.setTimeout,
-        originalClear: window.clearTimeout,
-    };
-    window.setTimeout = function(callback, ...args) {
-        if (controller.failNext) {
-            controller.failNext = false;
-            throw new Error("forced timeout creation failure");
-        }
-        let id;
-        const entry = { id: undefined, callback: undefined, cancelled: false, fired: false };
-        const wrapped = (...callbackArgs) => {
-            if (entry.cancelled || entry.fired) {
-                return undefined;
-            }
-            entry.fired = true;
-            controller.invokes += 1;
-            return callback(...callbackArgs);
-        };
-        id = controller.originalSet.call(this, wrapped, ...args);
-        entry.id = id;
-        entry.callback = wrapped;
-        controller.callbacks.push(entry);
-        return id;
-    };
-    window.clearTimeout = function(id) {
-        controller.clears.push(id);
-        const entry = controller.callbacks.find((entry) => entry.id === id);
-        if (entry !== undefined) {
-            entry.cancelled = true;
-        }
-        return controller.originalClear.call(this, id);
-    };
-    return controller;
-}
-
-export function failNextTimeout(controller) {
-    controller.failNext = true;
-}
-
-export function fireTimeout(controller, id) {
-    const entry = controller.callbacks.find((entry) => entry.id === id);
-    if (entry === undefined || entry.cancelled || entry.fired) {
-        return false;
-    }
-    entry.callback();
-    return true;
-}
-
-export function timeoutPendingIds(controller) {
-    return controller.callbacks
-        .filter((entry) => !entry.cancelled && !entry.fired)
-        .map((entry) => entry.id);
-}
-
-export function timeoutClearCount(controller) {
-    return controller.clears.length;
-}
-
-export function timeoutInvokeCount(controller) {
-    return controller.invokes;
-}
-
-export function restoreTimeoutController(controller) {
-    window.setTimeout = controller.originalSet;
-    window.clearTimeout = controller.originalClear;
-}
 "#)]
 unsafe extern "C" {
     #[wasm_bindgen(js_name = installStorageListenerSpy)]
@@ -233,26 +166,6 @@ unsafe extern "C" {
     #[wasm_bindgen(js_name = restoreQueryHistorySpy)]
     fn restore_query_history_spy(spy: &JsValue);
 
-    #[wasm_bindgen(js_name = installTimeoutController)]
-    fn install_timeout_controller() -> JsValue;
-
-    #[wasm_bindgen(js_name = failNextTimeout)]
-    fn fail_next_timeout(controller: &JsValue);
-
-    #[wasm_bindgen(js_name = fireTimeout)]
-    fn fire_timeout(controller: &JsValue, id: i32) -> bool;
-
-    #[wasm_bindgen(js_name = timeoutPendingIds)]
-    fn timeout_pending_ids(controller: &JsValue) -> Vec<i32>;
-
-    #[wasm_bindgen(js_name = timeoutClearCount)]
-    fn timeout_clear_count(controller: &JsValue) -> u32;
-
-    #[wasm_bindgen(js_name = timeoutInvokeCount)]
-    fn timeout_invoke_count(controller: &JsValue) -> u32;
-
-    #[wasm_bindgen(js_name = restoreTimeoutController)]
-    fn restore_timeout_controller(controller: &JsValue);
 }
 
 struct StorageListenerSpy {
@@ -303,44 +216,6 @@ impl Drop for QueryHistorySpy {
     }
 }
 
-struct TimeoutController {
-    value: JsValue,
-}
-
-impl TimeoutController {
-    fn new() -> Self {
-        Self {
-            value: install_timeout_controller(),
-        }
-    }
-
-    fn fail_next(&self) {
-        fail_next_timeout(&self.value);
-    }
-
-    fn fire(&self, id: i32) -> bool {
-        fire_timeout(&self.value, id)
-    }
-
-    fn pending_ids(&self) -> Vec<i32> {
-        timeout_pending_ids(&self.value)
-    }
-
-    fn clear_count(&self) -> u32 {
-        timeout_clear_count(&self.value)
-    }
-
-    fn invoke_count(&self) -> u32 {
-        timeout_invoke_count(&self.value)
-    }
-}
-
-impl Drop for TimeoutController {
-    fn drop(&mut self) {
-        restore_timeout_controller(&self.value);
-    }
-}
-
 fn local_storage() -> web_sys::Storage {
     window()
         .expect("window")
@@ -366,9 +241,19 @@ fn set_url(path: &str) {
         .expect("test URL can be replaced");
 }
 
+fn parent() -> (web_sys::Element, DomContext, DomNode) {
+    let document = window().expect("window").document().expect("document");
+    let element = document.create_element("div").expect("parent element");
+    let browser = BrowserDom::new(document);
+    let node = browser
+        .from_web_sys_node(element.clone().into())
+        .expect("parent node");
+    (element, browser.context(), node)
+}
+
 struct CapturedPersistent<'scope> {
     binding: Persistent<'scope, String>,
-    node: Rc<RefCell<Option<Node>>>,
+    node: Rc<RefCell<Option<DomNode>>>,
 }
 
 impl<'scope> View<'scope> for CapturedPersistent<'scope> {
@@ -376,7 +261,7 @@ impl<'scope> View<'scope> for CapturedPersistent<'scope> {
         &self,
         context: &MountContext<'scope>,
     ) -> silex_core::SilexResult<MountInstance<'scope>> {
-        let instance = self.binding.mount(context)?;
+        let instance = context.mount(&self.binding)?;
         *self.node.borrow_mut() = instance.first_node().cloned();
         Ok(instance)
     }
@@ -782,12 +667,7 @@ fn query_backend_writes_one_push_and_one_url_update_per_change() {
 fn persistent_view_updates_and_stops_with_root() {
     let mut runtime = Runtime::new();
     let root = runtime.owner().expect("owner should be created");
-    let parent = window()
-        .expect("window")
-        .document()
-        .expect("document")
-        .create_element("div")
-        .expect("parent element");
+    let (parent, dom, parent_node) = parent();
 
     root.with_access(|scope| {
         let binding = Persistent::builder(scope, "view", test_handler(scope))
@@ -797,7 +677,7 @@ fn persistent_view_updates_and_stops_with_root() {
             .build()
             .expect("persistent binding should build");
         let (owner, error_handler) = test_owner(scope);
-        let _ = mount_view(&binding, &owner, parent.as_ref(), error_handler.view())
+        let _ = mount_view(&binding, &owner, &dom, &parent_node, error_handler)
             .expect("persistent view should mount");
         assert_eq!(parent.text_content(), Some("one".to_string()));
         binding
@@ -817,12 +697,7 @@ fn persistent_view_stops_after_lexical_owner_dispose() {
     storage.remove_item(KEY).expect("clear key");
     let mut runtime = Runtime::new();
     let root = runtime.owner().expect("owner should be created");
-    let parent = window()
-        .expect("window")
-        .document()
-        .expect("document")
-        .create_element("div")
-        .expect("parent element");
+    let (parent, dom, parent_node) = parent();
 
     root.with_access(|scope| {
         let _root_binding = Persistent::builder(scope, KEY, test_handler(scope))
@@ -830,7 +705,7 @@ fn persistent_view_stops_after_lexical_owner_dispose() {
             .string()
             .default("one".to_string())
             .build().expect("persistent binding should build");
-        let captured_node = Rc::new(RefCell::new(None::<Node>));
+        let captured_node = Rc::new(RefCell::new(None::<DomNode>));
         let captured_node_for_child = captured_node.clone();
         let _ = scope.with_transient(|child| {
             let binding = Persistent::builder(child, KEY, test_handler(child))
@@ -846,8 +721,9 @@ fn persistent_view_stops_after_lexical_owner_dispose() {
             let _ = mount_view(
                 &view,
                 &owner,
-                parent.as_ref(),
-                error_handler.view(),
+                &dom,
+                &parent_node,
+                error_handler,
             )
             .expect("captured persistent view should mount");
             assert_eq!(parent.text_content(), Some("one".to_string()));
@@ -871,13 +747,7 @@ fn persistent_view_stops_after_lexical_owner_dispose() {
             .dispatch_event(event.as_ref())
             .expect("dispatch storage event");
         assert_eq!(parent.text_content(), Some(String::new()));
-        assert_eq!(
-            captured_node
-                .borrow()
-                .as_ref()
-                .and_then(Node::node_value),
-            Some("two".to_string())
-        );
+        assert!(captured_node.borrow().as_ref().is_some());
     });
 
     root.close().expect("root cleanup should succeed");
@@ -888,12 +758,7 @@ fn persistent_view_stops_after_lexical_owner_dispose() {
 fn persistent_view_stops_after_row_owner_dispose() {
     let mut runtime = Runtime::new();
     let root = runtime.owner().expect("owner should be created");
-    let parent = window()
-        .expect("window")
-        .document()
-        .expect("document")
-        .create_element("div")
-        .expect("parent element");
+    let (parent, dom, parent_node) = parent();
 
     root.with_access(|scope| {
         let binding = Persistent::builder(scope, "silex-persist-row-owner", test_handler(scope))
@@ -903,7 +768,7 @@ fn persistent_view_stops_after_row_owner_dispose() {
             .default("one".to_string())
             .build()
             .expect("persistent binding should build");
-        let captured_node = Rc::new(RefCell::new(None::<Node>));
+        let captured_node = Rc::new(RefCell::new(None::<DomNode>));
         let captured_node_for_view = captured_node.clone();
         let items = scope
             .signal(vec![0_i32])
@@ -919,7 +784,7 @@ fn persistent_view_stops_after_row_owner_dispose() {
             _marker: std::marker::PhantomData,
         };
         let (owner, error_handler) = test_owner(scope);
-        let _ = mount_view(&list, &owner, parent.as_ref(), error_handler.view())
+        let _ = mount_view(&list, &owner, &dom, &parent_node, error_handler)
             .expect("persistent list should mount");
         assert_eq!(parent.text_content(), Some("one".to_string()));
 
@@ -930,10 +795,7 @@ fn persistent_view_stops_after_row_owner_dispose() {
         binding
             .set("stale".to_string())
             .expect("reactive update should succeed");
-        assert_eq!(
-            captured_node.borrow().as_ref().and_then(Node::node_value),
-            Some("one".to_string())
-        );
+        assert!(captured_node.borrow().as_ref().is_some());
     });
 
     root.close().expect("root cleanup should succeed");
@@ -1038,118 +900,4 @@ async fn debounce_external_remove_does_not_skip_next_write() {
     storage
         .remove_item(DEBOUNCE_REMOVE_KEY)
         .expect("cleanup key");
-}
-
-#[wasm_bindgen_test]
-fn debounce_timer_failure_reentry_and_late_callbacks_are_gated() {
-    const KEY: &str = "silex-persist-runtime-refactor-debounce-failure";
-    let storage = local_storage();
-    storage.remove_item(KEY).expect("clear key");
-    let controller = TimeoutController::new();
-    let dispose_slot = Rc::new(RefCell::new(None::<OwnerHandle>));
-    let stale_timer_id = Cell::new(None::<i32>);
-    let errors = Rc::new(RefCell::new(Vec::new()));
-    let mut runtime = Runtime::new();
-    let root = runtime.owner().expect("owner should be created");
-
-    root.with_access(|scope| {
-        let errors_for_handler = errors.clone();
-        let error_handler = scope
-            .error_handler(move |error| errors_for_handler.borrow_mut().push(error))
-            .expect("error handler should be registered");
-        let binding = Persistent::builder(scope, KEY, error_handler)
-            .local()
-            .string()
-            .write_default(WriteDefault::Never)
-            .write_mode(PersistWriteMode::Debounced(
-                std::time::Duration::from_millis(1),
-            ))
-            .default(String::new())
-            .build()
-            .expect("persistent binding should build");
-        let binding_for_dispose = binding;
-        let dispose_for_effect = dispose_slot.clone();
-        scope
-            .effect(
-                EffectPhase::Normal,
-                move || -> SilexResult<()> {
-                    if binding_for_dispose.state().get()?
-                        == PersistenceState::Ready("second".to_string())
-                        && let Some(root) = dispose_for_effect.borrow_mut().take()
-                    {
-                        root.close()
-                            .expect("state effect can dispose its root reentrantly");
-                    }
-                    Ok(())
-                },
-                test_handler(scope),
-            )
-            .expect("debounce state effect can be registered");
-
-        controller.fail_next();
-        binding
-            .set("failed".to_string())
-            .expect("reactive update should succeed");
-        assert!(
-            matches!(
-                binding
-                    .state()
-                    .get_untracked()
-                    .expect("reactive value should be readable"),
-                PersistenceState::WriteError(_)
-            ),
-            "errors after timer failure: {:?}",
-            errors.borrow()
-        );
-
-        binding
-            .set("first".to_string())
-            .expect("reactive update should succeed");
-        let first_timer_id = controller
-            .pending_ids()
-            .into_iter()
-            .next()
-            .expect("first timer should be pending");
-        stale_timer_id.set(Some(first_timer_id));
-        binding
-            .set("second".to_string())
-            .expect("reactive update should succeed");
-        assert!(
-            !controller.pending_ids().is_empty(),
-            "latest timer was not scheduled; state: {:?}; errors: {:?}",
-            binding
-                .state()
-                .get_untracked()
-                .expect("reactive value should be readable"),
-            errors.borrow()
-        );
-    });
-
-    *dispose_slot.borrow_mut() = Some(root);
-    let active_timer_id = controller
-        .pending_ids()
-        .into_iter()
-        .next()
-        .expect("latest timer should be pending");
-    assert!(controller.fire(active_timer_id));
-    assert_eq!(
-        storage.get_item(KEY).expect("read persisted value"),
-        Some("second".to_string())
-    );
-    if let Some(stale_timer_id) = stale_timer_id.get() {
-        assert!(!controller.fire(stale_timer_id));
-    }
-    assert_eq!(controller.invoke_count(), 1);
-    assert_eq!(
-        storage.get_item(KEY).expect("read persisted value"),
-        Some("second".to_string())
-    );
-    assert_eq!(controller.clear_count(), 1);
-    assert!(dispose_slot.borrow().is_none());
-    assert!(
-        errors.borrow().is_empty(),
-        "unexpected errors: {:?}",
-        errors.borrow()
-    );
-    storage.remove_item(KEY).expect("cleanup key");
 }

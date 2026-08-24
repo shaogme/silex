@@ -1,4 +1,5 @@
 use silex::bootstrap::{BootstrapError, BrowserBootstrap, JsAppHost};
+use silex::dom::CleanupSink;
 use silex::prelude::*;
 use silex::reexports::*;
 use silex::ui::{Button, Dialog, Input, Progress, Switch, Textarea, *};
@@ -534,7 +535,7 @@ fn App<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'scope> {
         EffectPhase::Normal,
         move || -> SilexResult<()> {
             let dark = is_dark.get()?;
-            if let Some(doc) = window().document()
+            if let Some(doc) = web_sys::window().and_then(|window| window.document())
                 && let Some(el) = doc.document_element()
             {
                 if dark {
@@ -608,17 +609,17 @@ pub fn mount_ui() -> Result<JsAppHost, BootstrapError> {
 
 /// Mount the UI showcase into a caller-provided target node.
 pub fn mount_ui_into(target: web_sys::Node) -> Result<JsAppHost, BootstrapError> {
-    let mut bootstrap = BrowserBootstrap::new(target, CleanupSink::console());
+    let mut bootstrap = BrowserBootstrap::from_web_sys(target, CleanupSink::console())?;
     silex::ui::inject_shadcn_base_styles();
     bootstrap.mount(Runtime::new(), mount_ui_view)?;
     bootstrap.into_js_host()
 }
 
-fn mount_ui_view<'scope>(ctx: &MountContext<'scope>) -> SilexResult<()> {
+fn mount_ui_view<'scope>(ctx: &MountBuilderContext<'scope>) -> SilexResult<()> {
     let owner = ctx.access();
     let error_handler = owner.error_handler(|error: SilexError| {
         web_sys::console::error_1(&error.to_string().into());
     })?;
     let silex_ctx = SilexContext::new(owner, error_handler.view());
-    ctx.mount(App(silex_ctx).build(), error_handler)
+    ctx.mount_unit(App(silex_ctx).build(), error_handler)
 }

@@ -2,7 +2,8 @@
 
 use silex_bootstrap::{AppHost, AppHostError, HostState, UnmountOutcome};
 use silex_core::{Runtime, SilexError, SilexErrorKind, SilexResult};
-use silex_dom::{CleanupSink, MountContext, element::Element};
+use silex_dom::CleanupSink;
+use silex_view::{Element, MountBuilderContext};
 use std::{cell::Cell, rc::Rc};
 use wasm_bindgen_test::*;
 use web_sys::Node;
@@ -36,9 +37,9 @@ fn detach(target: &Node) {
     }
 }
 
-fn mount_text<'scope>(ctx: &MountContext<'scope>, text: &'static str) -> SilexResult<()> {
+fn mount_text<'scope>(ctx: &MountBuilderContext<'scope>, text: &'static str) -> SilexResult<()> {
     let handler = ctx.access().error_handler(|_: SilexError| {})?;
-    ctx.mount(Element::with_child("section", text), handler)
+    ctx.mount_unit(Element::with_child("section", text), handler)
 }
 
 fn clean_sink() -> CleanupSink {
@@ -48,7 +49,7 @@ fn clean_sink() -> CleanupSink {
 #[wasm_bindgen_test]
 fn mount_rejects_active_app_and_unmount_is_idempotent() {
     let target = target();
-    let mut host = AppHost::new(target.clone(), clean_sink());
+    let mut host = AppHost::from_web_sys(target.clone(), clean_sink()).expect("browser host");
 
     assert_eq!(host.state(), HostState::Ready);
     host.mount(Runtime::new(), |ctx| mount_text(ctx, "first"))
@@ -83,7 +84,7 @@ fn mount_rejects_active_app_and_unmount_is_idempotent() {
 #[wasm_bindgen_test]
 fn clean_mount_failure_returns_to_ready_and_preserves_primary_error() {
     let target = target();
-    let mut host = AppHost::new(target.clone(), clean_sink());
+    let mut host = AppHost::from_web_sys(target.clone(), clean_sink()).expect("browser host");
 
     let error = host
         .mount(Runtime::new(), |_ctx| {
@@ -115,7 +116,7 @@ fn clean_mount_failure_returns_to_ready_and_preserves_primary_error() {
 #[ignore = "wasm32-unknown-unknown uses panic=abort; run in an unwind test target"]
 fn non_clean_mount_rollback_poisoned_host() {
     let target = target();
-    let mut host = AppHost::new(target.clone(), clean_sink());
+    let mut host = AppHost::from_web_sys(target.clone(), clean_sink()).expect("browser host");
 
     let error = host
         .mount(Runtime::new(), |ctx| {
@@ -148,7 +149,7 @@ fn non_clean_mount_rollback_poisoned_host() {
 #[wasm_bindgen_test]
 fn replace_disposes_old_app_before_publishing_new_app() {
     let target = target();
-    let mut host = AppHost::new(target.clone(), clean_sink());
+    let mut host = AppHost::from_web_sys(target.clone(), clean_sink()).expect("browser host");
 
     host.mount(Runtime::new(), |ctx| mount_text(ctx, "old"))
         .expect("initial mount should succeed");
@@ -167,8 +168,10 @@ fn replace_disposes_old_app_before_publishing_new_app() {
 fn separate_hosts_keep_their_apps_and_runtimes_independent() {
     let first_target = target();
     let second_target = target();
-    let mut first = AppHost::new(first_target.clone(), clean_sink());
-    let mut second = AppHost::new(second_target.clone(), clean_sink());
+    let mut first =
+        AppHost::from_web_sys(first_target.clone(), clean_sink()).expect("browser host");
+    let mut second =
+        AppHost::from_web_sys(second_target.clone(), clean_sink()).expect("browser host");
 
     first
         .mount(Runtime::new(), |ctx| mount_text(ctx, "first"))
@@ -194,7 +197,7 @@ fn separate_hosts_keep_their_apps_and_runtimes_independent() {
 #[wasm_bindgen_test]
 fn replace_without_active_app_is_rejected() {
     let target = target();
-    let mut host = AppHost::new(target.clone(), clean_sink());
+    let mut host = AppHost::from_web_sys(target.clone(), clean_sink()).expect("browser host");
 
     let error = host
         .replace(Runtime::new(), |ctx| mount_text(ctx, "new"))
@@ -209,7 +212,7 @@ fn replace_without_active_app_is_rejected() {
 #[ignore = "wasm32-unknown-unknown uses panic=abort; run in an unwind test target"]
 fn failed_old_dispose_does_not_restore_or_replace_the_old_app() {
     let target = target();
-    let mut host = AppHost::new(target.clone(), clean_sink());
+    let mut host = AppHost::from_web_sys(target.clone(), clean_sink()).expect("browser host");
 
     host.mount(Runtime::new(), |ctx| {
         let owner = ctx.access();
@@ -218,7 +221,7 @@ fn failed_old_dispose_does_not_restore_or_replace_the_old_app() {
             || -> SilexResult<()> { panic!("old app cleanup failure") },
             &handler,
         )?;
-        ctx.mount(Element::with_child("section", "old"), handler)
+        ctx.mount_unit(Element::with_child("section", "old"), handler)
     })
     .expect("old app should mount");
 
@@ -243,7 +246,7 @@ fn failed_old_dispose_does_not_restore_or_replace_the_old_app() {
 #[wasm_bindgen_test]
 fn failed_new_mount_leaves_replace_host_empty_and_ready() {
     let target = target();
-    let mut host = AppHost::new(target.clone(), clean_sink());
+    let mut host = AppHost::from_web_sys(target.clone(), clean_sink()).expect("browser host");
 
     host.mount(Runtime::new(), |ctx| mount_text(ctx, "old"))
         .expect("old app should mount");
@@ -267,7 +270,7 @@ fn failed_new_mount_leaves_replace_host_empty_and_ready() {
 #[ignore = "wasm32-unknown-unknown uses panic=abort; run in an unwind test target"]
 fn builder_panic_returns_structured_mount_error_and_poisoned_host() {
     let target = target();
-    let mut host = AppHost::new(target.clone(), clean_sink());
+    let mut host = AppHost::from_web_sys(target.clone(), clean_sink()).expect("browser host");
 
     let error = host
         .mount(Runtime::new(), |_ctx| -> SilexResult<()> {
@@ -289,7 +292,7 @@ fn app_host_drop_delegates_cleanup_once_to_mounted_app() {
 
     {
         let cleanups_by_builder = cleanups.clone();
-        let mut host = AppHost::new(target.clone(), clean_sink());
+        let mut host = AppHost::from_web_sys(target.clone(), clean_sink()).expect("browser host");
         host.mount(Runtime::new(), move |ctx| {
             let owner = ctx.access();
             let handler = owner.error_handler(|_: SilexError| {})?;
@@ -301,7 +304,7 @@ fn app_host_drop_delegates_cleanup_once_to_mounted_app() {
                 },
                 &handler,
             )?;
-            ctx.mount(Element::with_child("section", "owned"), handler)
+            ctx.mount_unit(Element::with_child("section", "owned"), handler)
         })
         .expect("app should mount");
     }
@@ -314,7 +317,7 @@ fn app_host_drop_delegates_cleanup_once_to_mounted_app() {
 #[wasm_bindgen_test]
 fn unmount_after_external_target_removal_still_disposes_owner() {
     let target = target();
-    let mut host = AppHost::new(target.clone(), clean_sink());
+    let mut host = AppHost::from_web_sys(target.clone(), clean_sink()).expect("browser host");
     host.mount(Runtime::new(), |ctx| mount_text(ctx, "detached"))
         .expect("app should mount");
 

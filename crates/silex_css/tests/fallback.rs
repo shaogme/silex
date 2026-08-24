@@ -1,12 +1,11 @@
 #![cfg(all(target_arch = "wasm32", feature = "test-style-fallback"))]
 
 use js_sys::Promise;
-use silex_core::{ErrorHandlerToken, OwnerAccess, Runtime};
+use silex_core::{ErrorHandlerInput, ErrorHandlerToken, OwnerAccess, Runtime};
 use silex_css::{CssPart, DynamicCss, DynamicStyleManager, IntoCssReactive, prelude::inject_style};
-use silex_dom::{
-    attribute::{ApplyTarget, ApplyToDom},
-    view::{MountContext, MountOwner, MountOwnerToken},
-};
+use silex_dom::browser::BrowserDom;
+use silex_view::attribute::{ApplyTarget, ApplyToDom};
+use silex_view::{MountContext, MountOwnerToken};
 use wasm_bindgen::JsCast;
 use wasm_bindgen::JsValue;
 use wasm_bindgen_futures::JsFuture;
@@ -137,9 +136,20 @@ async fn style_tag_fallback_injects_updates_and_detaches_on_owner_dispose() {
                 .signal(String::from("red"))
                 .expect("signal should initialize");
             let (owner_token, error_handler) = test_owner(owner);
-            let token = owner_token.token();
-            let context =
-                MountContext::for_parent(element.clone().into(), token, error_handler.view());
+            let browser = BrowserDom::new(document());
+            let node = browser
+                .from_web_sys_node(element.clone().into())
+                .expect("test element should be a DOM node");
+            let dom_element = browser
+                .context()
+                .element(&node)
+                .expect("test node should be an element");
+            let context = MountContext::for_parent(
+                browser.context(),
+                node,
+                owner_token,
+                error_handler.handler_ref(),
+            );
             let dynamic = DynamicCss::new("slx-fallback-dynamic").with_rule(
                 &[
                     CssPart::Lit("."),
@@ -151,7 +161,7 @@ async fn style_tag_fallback_injects_updates_and_detaches_on_owner_dispose() {
                 vec![value.into_css_reactive()],
             );
             dynamic
-                .apply(&element, ApplyTarget::Class, &context)
+                .apply(&dom_element, ApplyTarget::Class, &context)
                 .expect("dynamic style can be applied");
             let initial =
                 style_text_containing("slx-fallback-dynamic").expect("fallback style exists");

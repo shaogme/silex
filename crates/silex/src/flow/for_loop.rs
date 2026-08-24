@@ -1,9 +1,9 @@
 use silex_core::ErrorHandlerToken;
 use silex_core::reactivity::ReactiveSource;
 use silex_core::traits::{ForLoopSource, RxRead, RxReadRef};
-use silex_dom::prelude::*;
-use silex_dom::view::{AnyView, RenderOnlyKeyedListView, RowUpdater, StatefulKeyedListView};
 use silex_macros::component;
+use silex_view::prelude::*;
+use silex_view::{AnyView, RenderOnlyKeyedListView, RowUpdater, StatefulKeyedListView};
 use std::hash::Hash;
 use std::marker::PhantomData;
 use std::rc::Rc;
@@ -106,6 +106,7 @@ where
 ///         let node = /* 创建并保存该行 DOM 节点 */;
 ///         updater.bind(move |next_item, next_idx| {
 ///             /* 增量更新 node */
+///             Ok(())
 ///         });
 ///         node
 ///     })

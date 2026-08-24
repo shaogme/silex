@@ -4,11 +4,9 @@ extern crate silex_macros_test as silex;
 
 use silex::core::{ErrorReporter, OwnerAccess, Runtime, Rx, Signal, SilexContext, SilexResult};
 use silex::css::types::Hex;
-use silex::dom::attribute::{
-    AttrOp, AttributeBuilder, AttributeGroup, GlobalAttributes, ReactiveBindingTarget,
-};
-use silex::dom::prelude::AnyView;
 use silex::macros::{css, global, styled, tw, tw_variants};
+use silex_view::AnyView;
+use silex_view::attribute::{AttrOp, AttributeGroup, ReactiveBindingTarget};
 
 tw_variants! {
     pub struct NumericVariants {

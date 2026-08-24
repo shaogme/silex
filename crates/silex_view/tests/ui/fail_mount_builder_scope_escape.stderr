@@ -1,0 +1,10 @@
+error[E0621]: explicit lifetime required in the type of `context`
+ --> tests/ui/fail_mount_builder_scope_escape.rs:4:5
+  |
+4 |     context
+  |     ^^^^^^^ lifetime `'scope` required
+  |
+help: add explicit lifetime `'scope` to the type of `context`
+  |
+3 | fn escape<'scope>(context: &'scope MountBuilderContext<'scope>) -> &'scope MountBuilderContext<'scope> {
+  |                             ++++++

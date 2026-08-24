@@ -16,8 +16,9 @@ workspace = true
 
 [dependencies]
 silex_core = { workspace = true, features = ["error-persistence"] }
-silex_dom.workspace = true
+silex_view.workspace = true
 silex_router.workspace = true
+gloo-timers = { workspace = true, features = ["futures"] }
 ref_str = "0.2"
 wasm-bindgen.workspace = true
 web-sys = { workspace = true, features = [
@@ -33,6 +34,9 @@ serde_json = { workspace = true, optional = true }
 gloo-timers.workspace = true
 trybuild = "1.0"
 wasm-bindgen-test.workspace = true
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+silex_dom.workspace = true
 
 [features]
 default = []

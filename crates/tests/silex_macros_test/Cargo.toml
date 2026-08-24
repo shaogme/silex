@@ -11,6 +11,7 @@ workspace = true
 silex_core.workspace = true
 silex_css = { workspace = true, features = ["tw"] }
 silex_dom.workspace = true
+silex_view.workspace = true
 silex_html.workspace = true
 silex_macros = { workspace = true, default-features = false, features = ["component", "css", "tw", "store"] }
 silex_persist.workspace = true

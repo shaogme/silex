@@ -1,5 +1,5 @@
-use silex_dom::prelude::*;
 use silex_macros::styled;
+use silex_view::prelude::*;
 
 styled! {
     pub Card<'scope, Ctx><div>(#[ctx] ctx: Ctx, children: AnyView<'scope>) {

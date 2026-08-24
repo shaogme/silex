@@ -8,7 +8,7 @@ weight = 40
 
 `classes!` 是 class attribute 的轻量组合宏，入口在
 `crates/silex_macros/src/css/classes.rs`。它不编译 CSS，也不生成 stylesheet；
-职责只是把每一项转换成 `silex_dom::attribute::AttrOp`，并装进
+职责只是把每一项转换成 `silex_view::attribute::AttrOp`，并装进
 `AttributeGroup`。
 
 ## 输入与展开

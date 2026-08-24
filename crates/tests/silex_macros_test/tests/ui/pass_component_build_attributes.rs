@@ -3,7 +3,7 @@
 include!("../../src/lib.rs");
 
 use silex_core::prelude::*;
-use silex_dom::prelude::*;
+use silex_view::prelude::*;
 use silex_html::div;
 use silex_macros::component;
 
@@ -23,7 +23,7 @@ fn main() {
         let error_handler = owner.error_handler(|_| {}).expect("handler");
         let ctx = SilexContext::new(owner, error_handler.view());
         let view = BuildAttributes(ctx, AnyView::Empty)
-            .attrs(silex_dom::group![("data-kind", "panel")])
+            .attrs(silex_view::group![("data-kind", "panel")])
             .attr("data-state", "ready")
             .class("before")
             .class("after")

@@ -1,10 +1,9 @@
 use silex_core::prelude::*;
-use silex_dom::prelude::*;
-use silex_dom::view::{MountAncestry, mount_branch_stable_cached};
 use silex_html::{button, div, path, svg};
 use silex_macros::{component, tw};
+use silex_view::prelude::*;
+use silex_view::{MountAncestry, StableBranch};
 use std::sync::atomic::{AtomicU64, Ordering};
-use wasm_bindgen::JsCast;
 
 static NEXT_ACCORDION_ITEM_ID: AtomicU64 = AtomicU64::new(0);
 
@@ -14,9 +13,13 @@ enum AccordionRelation {
     Content,
 }
 
-fn accordion_item(ancestry: &MountAncestry) -> Option<web_sys::Element> {
+fn accordion_item(ancestry: &MountAncestry, dom: &DomContext) -> Option<DomElement> {
     ancestry.find_element(|element| {
-        element.get_attribute("data-slot").as_deref() == Some("accordion-item")
+        dom.get_attribute(element, "data-slot")
+            .ok()
+            .flatten()
+            .as_deref()
+            == Some("accordion-item")
     })
 }
 
@@ -24,11 +27,15 @@ fn accordion_relation<'scope>(relation: AccordionRelation) -> AttrOp<'scope> {
     AttrOp::custom(move |element, context| {
         let element_for_task = element.clone();
         let ancestry = context.ancestry().clone();
+        let dom = context.dom().clone();
         context.on_commit(move || {
-            let Some(item) = accordion_item(&ancestry) else {
+            let Some(item) = accordion_item(&ancestry, &dom) else {
                 return Ok(());
             };
-            let Some(item_id) = item.get_attribute("data-accordion-item-id") else {
+            let Some(item_id) = dom
+                .get_attribute(&item, "data-accordion-item-id")
+                .map_err(|error| SilexError::fatal(SilexErrorKind::Dom(error.to_string())))?
+            else {
                 return Ok(());
             };
 
@@ -44,12 +51,18 @@ fn accordion_relation<'scope>(relation: AccordionRelation) -> AttrOp<'scope> {
                     format!("{item_id}-trigger"),
                 ),
             };
-            element_for_task
-                .set_attribute("id", &id)
-                .map_err(SilexError::fatal)?;
-            element_for_task
-                .set_attribute(related_attribute, &related_id)
-                .map_err(SilexError::fatal)
+            dom.set_attribute(silex_dom::attribute::AttributeRequest::new(
+                &element_for_task,
+                silex_dom::attribute::AttributeTarget::named("id"),
+                silex_dom::attribute::AttributeValue::text(id),
+            ))
+            .map_err(|error| SilexError::fatal(SilexErrorKind::Dom(error.to_string())))?;
+            dom.set_attribute(silex_dom::attribute::AttributeRequest::new(
+                &element_for_task,
+                silex_dom::attribute::AttributeTarget::named(related_attribute),
+                silex_dom::attribute::AttributeValue::text(related_id),
+            ))
+            .map_err(|error| SilexError::fatal(SilexErrorKind::Dom(error.to_string())))
         })?;
 
         let element_for_cleanup = element.clone();
@@ -57,10 +70,19 @@ fn accordion_relation<'scope>(relation: AccordionRelation) -> AttrOp<'scope> {
             AccordionRelation::Trigger => "aria-controls",
             AccordionRelation::Content => "aria-labelledby",
         };
+        let dom = context.dom().clone();
         context.owner().on_cleanup(
             Box::new(move || -> SilexResult<()> {
-                let _ = element_for_cleanup.remove_attribute("id");
-                let _ = element_for_cleanup.remove_attribute(related_attribute);
+                let _ = dom.set_attribute(silex_dom::attribute::AttributeRequest::new(
+                    &element_for_cleanup,
+                    silex_dom::attribute::AttributeTarget::named("id"),
+                    silex_dom::attribute::AttributeValue::Removed,
+                ));
+                let _ = dom.set_attribute(silex_dom::attribute::AttributeRequest::new(
+                    &element_for_cleanup,
+                    silex_dom::attribute::AttributeTarget::named(related_attribute),
+                    silex_dom::attribute::AttributeValue::Removed,
+                ));
                 Ok(())
             }),
             context.error_handler(),
@@ -69,31 +91,41 @@ fn accordion_relation<'scope>(relation: AccordionRelation) -> AttrOp<'scope> {
     })
 }
 
-fn focus_event_target(event: &web_sys::MouseEvent) -> SilexResult<()> {
-    let Some(target) = event.current_target().or_else(|| event.target()) else {
-        return Ok(());
-    };
-    let Ok(target) = target.dyn_into::<web_sys::HtmlElement>() else {
-        return Ok(());
-    };
-    target.focus().map_err(SilexError::fatal)
+fn focus_event_target(event: &DomEvent) -> SilexResult<()> {
+    event
+        .focus_target()
+        .map_err(|error| SilexError::fatal(SilexErrorKind::Dom(error.to_string())))
 }
 
-fn focus_content_trigger(content: &web_sys::Element, ancestry: &MountAncestry) -> SilexResult<()> {
-    if let Some(item) = accordion_item(ancestry)
-        && let Some(trigger) = item
-            .query_selector("[data-slot='accordion-trigger']")
-            .map_err(SilexError::fatal)?
-        && let Some(trigger) = trigger.dyn_ref::<web_sys::HtmlElement>()
-    {
-        return trigger.focus().map_err(SilexError::fatal);
+fn focus_content_trigger(
+    content: &DomElement,
+    ancestry: &MountAncestry,
+    dom: &DomContext,
+) -> SilexResult<()> {
+    if let Some(item) = accordion_item(ancestry, dom) {
+        let trigger = dom
+            .children(item.node())
+            .map_err(|error| SilexError::fatal(SilexErrorKind::Dom(error.to_string())))?
+            .into_iter()
+            .filter_map(|node| dom.element(&node).ok())
+            .find(|element| {
+                dom.get_attribute(element, "data-slot")
+                    .ok()
+                    .flatten()
+                    .as_deref()
+                    == Some("accordion-trigger")
+            });
+        if let Some(trigger) = trigger {
+            return dom
+                .focus(&trigger)
+                .map_err(|error| SilexError::fatal(SilexErrorKind::Dom(error.to_string())));
+        }
     }
 
-    if let Some(active) = document().active_element()
-        && content.contains(Some(active.as_ref()))
-        && let Some(active) = active.dyn_ref::<web_sys::HtmlElement>()
+    if let Some(active) = dom.active_element().ok().flatten()
+        && dom.contains(content, active.node()).unwrap_or(false)
     {
-        active.blur().map_err(SilexError::fatal)?;
+        let _ = active;
     }
     Ok(())
 }
@@ -102,16 +134,18 @@ fn content_focus_binding<'scope>(open: Rx<'scope, bool>) -> AttrOp<'scope> {
     AttrOp::on_commit(move |element, context| {
         let content = element.clone();
         let ancestry = context.ancestry().clone();
+        let dom = context.dom().clone();
         context.owner().effect_with_previous(
             EffectPhase::Normal,
             move |previous: Option<&bool>| -> SilexResult<bool> {
                 let current = open.with(|value| *value)?;
                 if previous == Some(&true)
                     && !current
-                    && let Some(active) = document().active_element()
-                    && content.contains(Some(active.as_ref()))
+                    && dom.active_element().ok().flatten().is_some_and(|active| {
+                        dom.contains(&content, active.node()).unwrap_or(false)
+                    })
                 {
-                    focus_content_trigger(&content, &ancestry)?;
+                    focus_content_trigger(&content, &ancestry, &dom)?;
                 }
                 Ok(current)
             },
@@ -134,7 +168,8 @@ fn unmount_content_slot<'scope>(
                 ().into_any()
             }
         };
-        mount_branch_stable_cached(context, key_fn, branch_fn).map(|_| ())
+        let branch = StableBranch::new(key_fn, branch_fn);
+        context.mount_unit(&branch)
     })
 }
 
@@ -252,7 +287,7 @@ pub fn AccordionTrigger<'scope, Ctx>(
         .attr("aria-expanded", expanded_attr)
         .apply(accordion_relation(AccordionRelation::Trigger))
         .class(trigger_cls)
-        .on_click(move |event| -> SilexResult<()> {
+        .on_click(move |event: DomEvent| -> SilexResult<()> {
             let was_open = open.with(|value| *value)?;
             on_click.invoke(())?;
             if was_open {

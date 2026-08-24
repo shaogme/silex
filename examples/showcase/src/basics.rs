@@ -1,7 +1,7 @@
 use crate::css::AppTheme;
-use silex::dom::view::MountOwnerToken;
-use silex::{core::log::console_log, prelude::*};
-use std::time::Duration;
+use gloo_timers::future::TimeoutFuture;
+use silex::core::TaskHandle;
+use silex::{dom::log::console_log, prelude::*};
 
 #[component]
 pub fn Greeting<'scope, Ctx>(
@@ -35,10 +35,9 @@ pub fn Greeting<'scope, Ctx>(
 pub fn Counter<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
     let count = owner.signal(0)?;
     let double_count = rx!(ctx; $count * 2)?;
-    let owner_for_timer = MountOwnerToken::new(owner);
 
     // Timer Handle for Auto Increment (StoredValue: doesn't trigger UI updates itself)
-    let timer = owner.stored(None::<HostResource<'scope>>)?;
+    let timer = owner.stored(None::<TaskHandle<'scope>>)?;
     // UI State for the timer
     let is_running = owner.signal(false)?;
 
@@ -74,20 +73,21 @@ pub fn Counter<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
             .on(event::click, move |_| {
                 if is_running.get()? {
                     if let Some(handle) = timer.update(Option::take)? {
-                        handle.cancel()?;
+                        handle.cancel();
                     }
                     is_running.set(false)?;
                 } else {
-                    let handle = set_interval(
-                        &owner_for_timer,
-                        move || -> SilexResult<()> {
-                            count.update(|n| *n += 1)?;
-                            Ok(())
+                    let handle = owner.spawn_scoped(
+                        async move {
+                            loop {
+                                TimeoutFuture::new(1000).await;
+                                if count.update(|n| *n += 1).is_err() {
+                                    break;
+                                }
+                            }
                         },
-                        Duration::from_millis(1000),
                         error_handler,
-                    )
-                    .map_err(|error| SilexError::fatal(SilexErrorKind::from(error)))?;
+                    )?;
                     timer.set_untracked(Some(handle))?;
                     is_running.set(true)?;
                 }
@@ -100,8 +100,8 @@ pub fn Counter<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
             span("Set Value: "),
             input()
                 .prop("value", count) // One-way binding from signal to DOM
-                .on(event::input, move |e| {
-                    let val_str = event_target_value(&e);
+                .on(event::input, move |e: DomEvent| {
+                    let val_str = e.input_value().unwrap_or_default();
                     if let Ok(n) = val_str.parse::<i32>() {
                         count.set(n)?;
                     }
@@ -269,22 +269,30 @@ pub fn SignalGuardDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
 
 #[component]
 pub fn NodeRefDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
-    use silex::reexports::web_sys::HtmlInputElement;
-    let input_ref = owner.node_ref::<HtmlInputElement>()?;
+    let input_ref = MountOwnerToken::new(owner).node_ref();
+    let ref_status = owner.signal("Input ref has not been checked".to_string())?;
 
     Ok(div![
         h3("NodeRef Demo"),
-        p("Click the button to focus the input field using direct DOM access."),
+        p("The input is tracked through a backend-neutral NodeRef."),
         input()
             .placeholder("I will be focused...")
-            .node_ref(input_ref) // NodeRef 是 Copy 的，无需 clone
+            .node_ref(input_ref.clone())
             .style(sty(ctx).margin_right(px(10))?.padding("5px")?),
-        button("Focus Input").on(event::click, move |_| {
-            if let Some(el) = input_ref.get()? {
-                let _ = el.focus();
-            }
+        button("Check Input Ref").on(event::click, move |_| {
+            let has_input_ref = input_ref
+                .get()
+                .map_err(|error| SilexError::fatal(SilexErrorKind::Dom(error.to_string())))?
+                .is_some();
+            let message = if has_input_ref {
+                "Input ref is available"
+            } else {
+                "Input ref is empty"
+            };
+            ref_status.set(message.to_string())?;
             Ok(())
-        })
+        }),
+        p(ref_status)
     ]
     .style(
         sty(ctx)
@@ -434,15 +442,19 @@ pub fn EventDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
 #[component]
 pub fn BasicsPage<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
     let name_signal = owner.signal("Developer".to_string())?;
+    let name_draft = owner.signal("Developer".to_string())?;
 
     Ok(div![
         h2("Basics"),
         div![
             "Reactive Greeting Name: ",
-            "Reactive Greeting Name: ",
-            input().bind_value(name_signal),
+            input().bind_value(name_draft),
             button("Submit")
-                .attr("disabled", name_signal.equals(owner, "", error_handler)?,)
+                .attr("disabled", name_draft.equals(owner, "", error_handler)?,)
+                .on(event::click, move |_| {
+                    name_signal.set(name_draft.get()?)?;
+                    Ok(())
+                })
                 .style(sty(ctx).margin_left(px(10))?)
         ]
         .style(

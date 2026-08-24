@@ -1,0 +1,465 @@
+use silex_core::reactivity::Signal;
+use silex_core::{Runtime, RxGet, SilexError, SilexErrorKind};
+use silex_dom::error::CleanupSink;
+use silex_dom::ssr::SsrDom;
+use silex_view::attribute::{AttributeBuilder, GlobalAttributes, GlobalEventAttributes};
+use silex_view::dynamic::{BranchEvaluation, DynamicRenderer};
+use silex_view::element::{Element, Tag, TagMetadata, TagNamespace, TypedElement};
+use silex_view::{
+    AnyView, IndexedListView, MountContext, MountInstance, MountedApp, RenderOnlyKeyedListView,
+    StableBranch, View,
+};
+use std::cell::Cell;
+use std::marker::PhantomData;
+use std::rc::Rc;
+
+fn app(dom: &SsrDom) -> MountedApp {
+    let host = dom.document().expect("SSR document").node().clone();
+    MountedApp::new(
+        Runtime::new(),
+        dom.context(),
+        host,
+        CleanupSink::new(|_| {}),
+    )
+}
+
+#[derive(Clone, Copy)]
+struct SvgRect;
+
+impl Tag for SvgRect {
+    const METADATA: TagMetadata = TagMetadata::new("rect", TagNamespace::Svg, false);
+}
+
+#[derive(Clone, Copy)]
+struct HtmlInput;
+
+impl Tag for HtmlInput {
+    const METADATA: TagMetadata = TagMetadata::new("input", TagNamespace::Html, true);
+}
+
+struct FailingChild;
+
+impl<'scope> View<'scope> for FailingChild {
+    fn mount(
+        &self,
+        context: &MountContext<'scope>,
+    ) -> silex_core::SilexResult<MountInstance<'scope>> {
+        let _ = context.mount(&"provisional child")?;
+        Err(SilexError::fatal(SilexErrorKind::Framework(
+            "intentional child failure".into(),
+        )))
+    }
+}
+
+struct BorrowingDispatchView;
+
+impl<'scope> View<'scope> for BorrowingDispatchView {
+    fn mount(
+        &self,
+        context: &MountContext<'scope>,
+    ) -> silex_core::SilexResult<MountInstance<'scope>> {
+        let instance = context.mount(&"borrowed")?;
+        context.mount_unit(&"unit")?;
+        Ok(instance)
+    }
+}
+
+#[test]
+fn mount_context_dispatches_borrowed_views_and_units() {
+    let dom = SsrDom::new();
+    let mut mounted = app(&dom);
+    mounted
+        .mount(|context| {
+            let handler = context.access().error_handler(|_| {}).expect("handler");
+            context.mount_unit(BorrowingDispatchView, handler.view())
+        })
+        .expect("borrowed dispatch should mount");
+
+    assert_eq!(
+        dom.serialize(Default::default()).expect("serialize"),
+        "borrowedunit"
+    );
+}
+
+#[test]
+fn primitive_any_view_and_typed_elements_mount_with_metadata() {
+    let dom = SsrDom::new();
+    let mut mounted = app(&dom);
+    mounted
+        .mount(|context| {
+            let handler = context.access().error_handler(|_| {}).expect("handler");
+            let children = vec![
+                AnyView::from("text"),
+                AnyView::from(42_i32),
+                AnyView::from(Some("optional")),
+                AnyView::from(None::<&str>),
+            ];
+            let view = Element::with_child("main", children);
+            context.mount_unit(view, handler.view())
+        })
+        .expect("primitive views should mount");
+
+    assert_eq!(
+        dom.serialize(Default::default()).expect("serialize"),
+        "<main>text42optional</main>"
+    );
+    mounted.dispose().expect("dispose should succeed");
+
+    let mut mounted = app(&dom);
+    mounted
+        .mount(|context| {
+            let handler = context.access().error_handler(|_| {}).expect("handler");
+            let view = TypedElement::<SvgRect>::with_child_from_tag("square");
+            context.mount_unit(view, handler.view())
+        })
+        .expect("typed SVG element should mount");
+    assert_eq!(
+        dom.serialize(Default::default()).expect("serialize"),
+        "<rect xmlns=\"http://www.w3.org/2000/svg\">square</rect>"
+    );
+    mounted.dispose().expect("dispose should remove SVG view");
+
+    let mut mounted = app(&dom);
+    mounted
+        .mount(|context| {
+            let handler = context.access().error_handler(|_| {}).expect("handler");
+            let view = TypedElement::<HtmlInput>::from_tag();
+            context.mount_unit(view, handler.view())
+        })
+        .expect("typed void element should mount");
+    assert_eq!(
+        dom.serialize(Default::default()).expect("serialize"),
+        "<input>"
+    );
+}
+
+#[test]
+fn composite_mount_returns_all_nodes_and_disposes_them() {
+    let dom = SsrDom::new();
+    let mut mounted = app(&dom);
+    let node_count = Rc::new(Cell::new(0));
+    let node_count_for_assertion = node_count.clone();
+    mounted
+        .mount(|context| {
+            let handler = context.access().error_handler(|_| {}).expect("handler");
+            let instance = context.mount(
+                vec![
+                    Element::with_child("span", "first"),
+                    Element::with_child("span", "second"),
+                ],
+                handler.view(),
+            )?;
+            node_count_for_assertion.set(instance.len());
+            Ok(())
+        })
+        .expect("composite view should mount");
+
+    assert_eq!(node_count.get(), 2);
+    assert_eq!(
+        dom.serialize(Default::default()).expect("serialize"),
+        "<span>first</span><span>second</span>"
+    );
+    mounted
+        .dispose()
+        .expect("dispose should remove composite nodes");
+    assert_eq!(dom.serialize(Default::default()).expect("serialize"), "");
+}
+
+#[test]
+fn element_child_failure_rolls_back_provisional_nodes_and_owner() {
+    let dom = SsrDom::new();
+    let mut mounted = app(&dom);
+    let failure = mounted
+        .mount(|context| {
+            let handler = context.access().error_handler(|_| {}).expect("handler");
+            context.mount_unit(Element::with_child("section", FailingChild), handler.view())
+        })
+        .expect_err("failing child should fail the element mount");
+
+    assert!(failure.can_retry());
+    assert_eq!(dom.serialize(Default::default()).expect("serialize"), "");
+    mounted
+        .mount(|context| {
+            let handler = context.access().error_handler(|_| {}).expect("handler");
+            context.mount_unit(Element::with_child("p", "recovered"), handler.view())
+        })
+        .expect("mount should remain retryable");
+    assert_eq!(
+        dom.serialize(Default::default()).expect("serialize"),
+        "<p>recovered</p>"
+    );
+}
+
+#[test]
+fn attributes_are_consolidated_and_properties_are_not_serialized() {
+    let dom = SsrDom::new();
+    let mut mounted = app(&dom);
+    mounted
+        .mount(|context| {
+            let handler = context.access().error_handler(|_| {}).expect("handler");
+            let active = context.access().signal(true).expect("active signal");
+            let view = Element::new("input")
+                .class("zeta")
+                .class("alpha beta")
+                .class_toggle("active", active)
+                .style("color:red")
+                .attr("data-value", "<&")
+                .prop("value", "not an attribute")
+                .attr("hidden", false);
+            context.mount_unit(view, handler.view())
+        })
+        .expect("attribute view should mount");
+
+    assert_eq!(
+        dom.serialize(Default::default()).expect("serialize"),
+        "<input class=\"active alpha beta zeta\" data-value=\"&lt;&amp;\" style=\"color: red;\">"
+    );
+}
+
+#[test]
+fn dynamic_view_and_stable_branch_follow_signal_changes() {
+    let dom = SsrDom::new();
+    let mut mounted = app(&dom);
+    mounted
+        .mount(|context| {
+            let handler = context.access().error_handler(|_| {}).expect("handler");
+            let dynamic_value = context
+                .access()
+                .signal(String::from("before"))
+                .expect("dynamic signal");
+            let branch_key = context.access().signal(1_usize).expect("branch signal");
+            let dynamic = move || {
+                Element::with_child(
+                    "span",
+                    dynamic_value
+                        .get()
+                        .expect("dynamic value should be available"),
+                )
+            };
+            context.mount_unit(dynamic, handler.view())?;
+            context.mount_unit(
+                StableBranch::new(
+                    move || {
+                        branch_key
+                            .get()
+                            .map(|value| BranchEvaluation::new(value, value))
+                    },
+                    |evaluation, _branch_context| {
+                        let (key, value) = evaluation.into_parts();
+                        AnyView::from(Element::with_child("output", format!("{key}:{value}")))
+                    },
+                ),
+                handler.view(),
+            )?;
+            dynamic_value.set(String::from("after"))?;
+            branch_key.set(2)
+        })
+        .expect("dynamic views should mount");
+
+    let html = dom.serialize(Default::default()).expect("serialize");
+    assert!(
+        html.contains("<span>after</span>"),
+        "unexpected HTML: {html}"
+    );
+    assert!(
+        html.contains("<output>2:2</output>"),
+        "unexpected HTML: {html}"
+    );
+    assert!(!html.contains("before"), "stale dynamic branch: {html}");
+}
+
+#[test]
+fn dynamic_renderer_is_a_view_with_a_kernel_context_callback() {
+    let dom = SsrDom::new();
+    let mut mounted = app(&dom);
+    mounted
+        .mount(|context| {
+            let handler = context.access().error_handler(|_| {}).expect("handler");
+            let value = context
+                .access()
+                .signal(String::from("before"))
+                .expect("dynamic signal");
+            let value_for_renderer = value;
+            context.mount_unit(
+                DynamicRenderer::new(move |context| {
+                    let value = value_for_renderer.get()?;
+                    let view = Element::with_child("output", value);
+                    context.mount(&view)
+                }),
+                handler.view(),
+            )?;
+            value.set(String::from("after"))
+        })
+        .expect("dynamic renderer should mount");
+
+    assert_eq!(
+        dom.serialize(Default::default()).expect("serialize"),
+        "<!--dyn-start--><output>after</output><!--dyn-end-->"
+    );
+}
+
+#[test]
+fn indexed_list_updates_length_and_disposes_with_the_app() {
+    let dom = SsrDom::new();
+    let mut mounted = app(&dom);
+    mounted
+        .mount(|context| {
+            let handler = context.access().error_handler(|_| {}).expect("handler");
+            let values: Signal<'_, Vec<i32>> =
+                context.access().signal(vec![1, 2]).expect("list signal");
+            let list = IndexedListView {
+                each: values,
+                view_fn: Rc::new(|value: i32, index| {
+                    AnyView::from(Element::with_child("li", format!("{index}:{value}")))
+                }),
+                _marker: PhantomData,
+            };
+            context.mount_unit(list, handler.view())?;
+            values.set(vec![3, 4, 5])
+        })
+        .expect("indexed list should mount");
+
+    let html = dom.serialize(Default::default()).expect("serialize");
+    assert!(html.contains("<li>0:3</li>"), "unexpected HTML: {html}");
+    assert!(html.contains("<li>1:4</li>"), "unexpected HTML: {html}");
+    assert!(html.contains("<li>2:5</li>"), "unexpected HTML: {html}");
+    assert!(!html.contains("0:1"), "old list row survived: {html}");
+    mounted.dispose().expect("dispose should succeed");
+    assert_eq!(dom.serialize(Default::default()).expect("serialize"), "");
+}
+
+#[test]
+fn render_only_keyed_list_updates_rows_when_reordered() {
+    let dom = SsrDom::new();
+    let mut mounted = app(&dom);
+    mounted
+        .mount(|context| {
+            let handler = context.access().error_handler(|_| {}).expect("handler");
+            let values: Signal<'_, Vec<i32>> =
+                context.access().signal(vec![1, 2, 3]).expect("list signal");
+            let list = RenderOnlyKeyedListView {
+                each: values,
+                key_fn: Rc::new(|value: &i32| *value),
+                view_fn: Rc::new(|value: i32, index| {
+                    AnyView::from(Element::with_child("li", format!("{index}:{value}")))
+                }),
+                error_handler: None,
+                _marker: PhantomData,
+            };
+            context.mount_unit(list, handler.view())?;
+            values.set(vec![3, 1, 2])
+        })
+        .expect("render-only keyed list should mount");
+
+    let html = dom.serialize(Default::default()).expect("serialize");
+    assert!(html.contains("<li>0:3</li>"), "unexpected list: {html}");
+    assert!(html.contains("<li>1:1</li>"), "unexpected list: {html}");
+    assert!(html.contains("<li>2:2</li>"), "unexpected list: {html}");
+    assert!(!html.contains("0:1"), "stale keyed row survived: {html}");
+}
+
+#[test]
+fn mount_can_retry_after_failure_and_remounts_cleanly() {
+    let dom = SsrDom::new();
+    let mut mounted = app(&dom);
+    let failure = mounted
+        .mount(|context| {
+            let handler = context.access().error_handler(|_| {}).expect("handler");
+            context.mount_unit(Element::with_child("div", "temporary"), handler.view())?;
+            Err(SilexError::fatal(SilexErrorKind::Framework(
+                "intentional failure".into(),
+            )))
+        })
+        .expect_err("mount should fail");
+    assert!(failure.can_retry());
+    assert!(!mounted.is_poisoned());
+    assert_eq!(dom.serialize(Default::default()).expect("serialize"), "");
+
+    mounted
+        .mount(|context| {
+            let handler = context.access().error_handler(|_| {}).expect("handler");
+            context.mount_unit(Element::with_child("div", "recovered"), handler.view())
+        })
+        .expect("retry should succeed");
+    assert_eq!(
+        dom.serialize(Default::default()).expect("serialize"),
+        "<div>recovered</div>"
+    );
+
+    mounted
+        .mount(|context| {
+            let handler = context.access().error_handler(|_| {}).expect("handler");
+            context.mount_unit(Element::with_child("div", "replacement"), handler.view())
+        })
+        .expect("remount should dispose the previous session");
+    assert_eq!(
+        dom.serialize(Default::default()).expect("serialize"),
+        "<div>replacement</div>"
+    );
+}
+
+#[test]
+fn panicking_mount_poisoning_keeps_host_empty() {
+    let dom = SsrDom::new();
+    let mut mounted = app(&dom);
+    let error = mounted
+        .mount(|_| -> silex_core::SilexResult<()> { panic!("intentional panic") })
+        .expect_err("panic should become a mount error");
+    assert!(error.is_poisoned());
+    assert!(mounted.is_poisoned());
+    assert_eq!(dom.serialize(Default::default()).expect("serialize"), "");
+    assert!(
+        mounted
+            .mount(|_| Ok(()))
+            .expect_err("poisoned app should reject retry")
+            .is_poisoned()
+    );
+}
+
+#[test]
+fn node_ref_cleanup_and_reactive_attribute_cleanup_run_before_dom_removal() {
+    let dom = SsrDom::new();
+    let mut mounted = app(&dom);
+    let cleared = Rc::new(Cell::new(false));
+    let cleared_for_assertion = cleared.clone();
+    let mut raw_node = None;
+    mounted
+        .mount(|context| {
+            let handler = context.access().error_handler(|_| {}).expect("handler");
+            let title = context
+                .access()
+                .signal(String::from("bound"))
+                .expect("title signal");
+            let node_ref = context.owner().node_ref();
+            context.mount_unit(
+                Element::with_child("div", "node")
+                    .attr("title", title)
+                    .node_ref(node_ref.clone()),
+                handler.view(),
+            )?;
+            raw_node = node_ref.get().expect("node ref should be readable");
+            let cleared_for_cleanup = cleared.clone();
+            context.owner().on_cleanup(
+                Box::new(move || {
+                    cleared_for_cleanup.set(
+                        node_ref
+                            .get()
+                            .expect("node ref should be readable")
+                            .is_none(),
+                    );
+                    Ok(())
+                }),
+                handler.view(),
+            )
+        })
+        .expect("view should mount");
+    let raw_node = raw_node.expect("mounted node should be captured");
+    mounted.dispose().expect("dispose should succeed");
+    assert!(cleared_for_assertion.get());
+    assert!(
+        dom.context()
+            .parent(&raw_node)
+            .expect("parent lookup should succeed")
+            .is_none()
+    );
+}

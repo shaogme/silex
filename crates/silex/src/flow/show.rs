@@ -1,6 +1,6 @@
 use silex_core::{SilexContextProvider, reactivity::ReactiveSource};
-use silex_dom::prelude::*;
 use silex_macros::component;
+use silex_view::prelude::*;
 
 /// Show 组件：根据条件渲染不同的视图
 ///

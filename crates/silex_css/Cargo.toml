@@ -19,6 +19,7 @@ workspace = true
 silex_core.workspace = true
 silex_dom.workspace = true
 silex_hash.workspace = true
+silex_view.workspace = true
 silex_tw_core = { workspace = true, optional = true }
 wasm-bindgen.workspace = true
 web-sys = { workspace = true, features = [

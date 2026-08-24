@@ -1,10 +1,13 @@
 use crate::{ToRoute, context::RouterContext};
 use silex_core::SilexResult;
 use silex_core::traits::RxGet;
-use silex_dom::prelude::*;
-use silex_dom::view::MountContext;
 use silex_html::a;
 use silex_macros::component;
+use silex_view::attribute::{GlobalAttributes, GlobalEventAttributes};
+use silex_view::{
+    AnyView, AttributeBuilder, AttributeGroup, DomEvent, MountContext, MountInstance,
+    MouseEventData, View,
+};
 
 pub(crate) fn is_active_path(current_path: &str, href: &str) -> bool {
     if href == "/" {
@@ -33,13 +36,13 @@ struct ClickModifiers {
     alt: bool,
 }
 
-fn click_modifiers(event: &web_sys::MouseEvent) -> ClickModifiers {
+fn click_modifiers(event: MouseEventData) -> ClickModifiers {
     ClickModifiers {
         button: event.button(),
-        ctrl: event.ctrl_key(),
-        meta: event.meta_key(),
-        shift: event.shift_key(),
-        alt: event.alt_key(),
+        ctrl: event.ctrl(),
+        meta: event.meta(),
+        shift: event.shift(),
+        alt: event.alt(),
     }
 }
 
@@ -91,12 +94,12 @@ pub struct LinkView<'scope> {
 }
 
 impl<'scope> View<'scope> for LinkView<'scope> {
-    fn mount(
-        &self,
-        context: &MountContext<'scope>,
-    ) -> SilexResult<silex_dom::view::MountInstance<'scope>> {
+    fn mount(&self, context: &MountContext<'scope>) -> SilexResult<MountInstance<'scope>> {
         match &self.view {
-            Ok(view) => view.mount(context),
+            Ok(view) => {
+                let view = view.clone();
+                context.mount(&view)
+            }
             Err(error) => Err(error.clone()),
         }
     }
@@ -157,15 +160,18 @@ pub fn Link<'scope, T: ToRoute + Clone + 'scope>(
             .attr("target", behavior.target.clone())
             .attr("download", behavior.download.then_some(String::new()))
             .class(is_active_class)
-            .on_click(move |e: web_sys::MouseEvent| -> SilexResult<()> {
+            .on_click(move |event: DomEvent| -> SilexResult<()> {
+                let Some(mouse_event) = event.mouse_data() else {
+                    return Ok(());
+                };
                 if !should_intercept_click(
-                    click_modifiers(&e),
+                    click_modifiers(mouse_event),
                     &behavior_for_click,
                     &href_for_click,
                 ) {
                     return Ok(());
                 }
-                e.prevent_default();
+                event.prevent_default();
                 navigator.push(href_for_click.as_str())
             })
             .apply(attrs)

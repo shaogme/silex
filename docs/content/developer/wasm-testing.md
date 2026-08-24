@@ -168,6 +168,63 @@ cargo test -p silex_bootstrap \
   -- --nocapture
 ```
 
+`silex_view` 的 browser target 覆盖真实 DOM mount、属性/property、事件、
+NodeRef、动态 branch、indexed/keyed list、失败回滚和 dispose。mount API 收敛时，
+还应确认 browser target 通过 `MountContext::mount(&view)` 和
+`MountContext::mount_unit(&view)` 分发 View，`DynamicRenderer` 与
+`StableBranch` 的导入和挂载路径在 wasm 下可用：
+
+```sh
+NO_PROXY=127.0.0.1,localhost \
+no_proxy=127.0.0.1,localhost \
+GECKODRIVER_REMOTE=http://127.0.0.1:4444 \
+WASM_BINDGEN_USE_BROWSER=1 \
+RUSTFLAGS='-D warnings' \
+cargo test -p silex_view \
+  --target wasm32-unknown-unknown \
+  --test browser \
+  -- --nocapture \
+  --skip browser_stateful_keyed_updater_panic_preserves_previous_dom_and_order
+```
+
+新增或迁移调用方时，先对受影响 crate 做稳定 `--no-run` 检查；它只验证 wasm
+测试二进制生成，不启动 Firefox：
+
+```sh
+RUSTFLAGS='-D warnings' cargo test --locked \
+  -p silex_view -p silex_router -p silex \
+  -p silex_persist -p silex_html -p silex_i18n \
+  --target wasm32-unknown-unknown --all-targets --no-run
+
+RUSTFLAGS='-D warnings' cargo test --locked -p silex_i18n \
+  --features browser-tests \
+  --target wasm32-unknown-unknown --all-targets --no-run
+```
+
+稳定工具链下需要跳过该 panic-unwind 用例；这只绕过稳定预编译标准库的运行时
+限制，不代表跳过验证。要执行包括该用例在内的完整 View browser target，使用
+nightly 命令：
+
+```sh
+NO_PROXY=127.0.0.1,localhost \
+no_proxy=127.0.0.1,localhost \
+GECKODRIVER_REMOTE=http://127.0.0.1:4444 \
+WASM_BINDGEN_USE_BROWSER=1 \
+RUSTFLAGS='-D warnings -Cpanic=unwind -Cllvm-args=-wasm-use-legacy-eh=false' \
+cargo +nightly wasm-test-nightly \
+  -p silex_view \
+  --test browser \
+  -- --include-ignored --nocapture
+```
+
+仓库脚本使用同一 nightly 配置，并已将 `silex_view/tests/browser.rs` 纳入全量
+入口：
+
+```sh
+scripts/wasm-test.sh --list
+scripts/wasm-test.sh
+```
+
 ### 稳定 Wasm 的 panic 测试
 
 稳定预编译 Wasm 标准库下，故意触发 Rust panic 的测试可能输出

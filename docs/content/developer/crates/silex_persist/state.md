@@ -83,7 +83,7 @@ bootstrap write 失败不会让已经创建的 binding 静默消失；状态进�
 | --- | --- | --- |
 | `Immediate`（默认） | effect 发现 mutation 后立即 encode 并同步 set/remove。 | 低频、小值、需要立即落盘的设置。 |
 | `Manual` | 只更新响应式 value，并将与 backend 不同的 raw 标为 `Dirty`；`flush` 才写。 | 表单编辑、批量修改、提交按钮。 |
-| `Debounced(duration)` | 每次本地 mutation 替换旧 request，使用 owner-bound `OwnedTimeout` 延迟提交最新 raw。 | 高频输入；必须接受延迟和 timer 取消语义。 |
+| `Debounced(duration)` | 每次本地 mutation 替换旧 request，使用 owner-bound task handle 延迟提交最新 raw。 | 高频输入；必须接受延迟和 timer 取消语义。 |
 
 `flush` 总会取消待执行的 debounce timer，并成为显式 retry 入口。写请求携带
 revision；只有当前 request 才能把 `WriteError` 或 `Ready` 写回 state。timer

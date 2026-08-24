@@ -1,3 +1,4 @@
+use crate::crate_path::silex_view;
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::parse::{Parse, ParseStream, Parser};
@@ -25,10 +26,10 @@ impl Parse for ClassItem {
 }
 
 pub fn classes_impl(input: TokenStream) -> Result<TokenStream> {
-    let __silex = crate::crate_path::silex();
+    let __view = silex_view();
     let items = Punctuated::<ClassItem, Token![,]>::parse_terminated.parse2(input)?;
     if items.is_empty() {
-        return Ok(quote! { #__silex::dom::attribute::AttributeGroup::default() });
+        return Ok(quote! { #__view::attribute::AttributeGroup::default() });
     }
 
     let expanded = items.into_iter().map(|item| {
@@ -37,14 +38,14 @@ pub fn classes_impl(input: TokenStream) -> Result<TokenStream> {
             ClassItem::Conditional(cls, cond) => quote! { (#cls, #cond) },
         };
         quote! {
-            #__silex::dom::attribute::ApplyToDom::into_op(
-                #__silex::dom::attribute::IntoStorable::into_storable(#val),
-                #__silex::dom::attribute::ApplyTarget::Class,
+            #__view::attribute::ApplyToDom::into_op(
+                #__view::attribute::IntoStorable::into_storable(#val),
+                #__view::attribute::ApplyTarget::Class,
             )
         }
     });
 
-    Ok(quote! { #__silex::dom::attribute::AttributeGroup(vec![ #(#expanded),* ]) })
+    Ok(quote! { #__view::attribute::AttributeGroup(vec![ #(#expanded),* ]) })
 }
 
 #[cfg(test)]

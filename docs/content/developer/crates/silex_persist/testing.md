@@ -111,7 +111,7 @@ fn basic_documentation_example_runs() {
    对 Debounced 检查旧 timer 是否取消，以及 callback 是否命中当前 revision。
 4. 对外部事件记录 `BackendEvent`、key、decode/remove policy 和
    `last_backend_raw`；确认外部快照不会再次设置 local mutation 标记。
-5. 对 browser 资源检查 Storage listener、completion endpoint、`OwnedTimeout`
+5. 对 browser 资源检查 Storage listener、completion endpoint、owner task handle
    和 owner cleanup 的释放顺序；若发生 close failure，保留结构化错误，不要只
    依赖字符串日志。
 6. 对自定义 backend 检查 `BackendSubscribeError` 是否携带了失败前创建资源的

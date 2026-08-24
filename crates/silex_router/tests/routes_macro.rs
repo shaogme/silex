@@ -1,4 +1,5 @@
-use silex_router::{PathTail, RouteMatcher, dom::view::AnyView, macros::router};
+use silex_router::{PathTail, RouteMatcher, macros::router};
+use silex_view::AnyView;
 
 router! {
     pub enum CssRoute {

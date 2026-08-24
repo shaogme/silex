@@ -50,7 +50,7 @@ crate 根 `lib.rs` 暴露以下入口：
 最小导入通常如下：
 
 ```rust
-use silex_dom::attribute::{AriaAttributes, AttributeBuilder, GlobalAttributes};
+use silex_view::attribute::{AriaAttributes, AttributeBuilder, GlobalAttributes};
 use silex_html::{FormAttributes, button, div, input};
 
 let view = div!(
@@ -106,7 +106,7 @@ property。主要分组如下：
 
 所有方法的值都必须满足 `IntoStorable<'scope>`，所以可以传入借用字符串、
 owned `String`、基础类型、`Option`、响应式值或 `AttrOp`。全局属性、ARIA、
-事件和 `prop` 入口仍来自 `silex_dom::attribute`，不是
+事件和 `prop` 入口仍来自 `silex_view::attribute`，不是
 `silex_html::attributes` 自己重新实现的运行时。
 
 `value()`、`checked()` 等 facade 方法写 attribute。需要同步控件当前状态
@@ -128,7 +128,7 @@ owned `String`、基础类型、`Option`、响应式值或 `AttrOp`。全局属�
 请显式写出 `.attr(name, value)`、`.prop(name, value)` 或 `.apply(value)`：
 
 ```rust
-use silex_dom::attribute::AttributeBuilder;
+use silex_view::attribute::AttributeBuilder;
 use silex_html::{FormAttributes, input};
 
 let typed = input().value("before-erasure");

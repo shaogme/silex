@@ -78,7 +78,7 @@ value.set/update
   │ mark local mutation
   ├─ Immediate ────────► encode → backend.set/remove
   ├─ Manual ───────────► encode → Dirty；flush 时提交
-  └─ Debounced ────────► OwnedTimeout → commit latest request
+  └─ Debounced ────────► owner task handle → commit latest request
 
 backend event
   └─ CompletionSender → decode/remove policy → value + state

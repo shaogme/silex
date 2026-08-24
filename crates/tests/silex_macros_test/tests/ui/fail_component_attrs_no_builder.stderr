@@ -9,16 +9,16 @@ error[E0599]: the method `class` exists for struct `PlainComponentBuilder<'_, si
    |
    = note: the following trait bounds were not satisfied:
            `PlainComponentBuilder<'_, silex_core::SilexContext<'_>>: AttributeBuilder<'_>`
-           which is required by `PlainComponentBuilder<'_, silex_core::SilexContext<'_>>: silex_dom::attribute::GlobalAttributes<'_>`
+           which is required by `PlainComponentBuilder<'_, silex_core::SilexContext<'_>>: silex_view::attribute::GlobalAttributes<'_>`
            `&PlainComponentBuilder<'_, silex_core::SilexContext<'_>>: AttributeBuilder<'_>`
-           which is required by `&PlainComponentBuilder<'_, silex_core::SilexContext<'_>>: silex_dom::attribute::GlobalAttributes<'_>`
+           which is required by `&PlainComponentBuilder<'_, silex_core::SilexContext<'_>>: silex_view::attribute::GlobalAttributes<'_>`
            `&mut PlainComponentBuilder<'_, silex_core::SilexContext<'_>>: AttributeBuilder<'_>`
-           which is required by `&mut PlainComponentBuilder<'_, silex_core::SilexContext<'_>>: silex_dom::attribute::GlobalAttributes<'_>`
+           which is required by `&mut PlainComponentBuilder<'_, silex_core::SilexContext<'_>>: silex_view::attribute::GlobalAttributes<'_>`
 note: the trait `AttributeBuilder` must be implemented
-  --> $WORKSPACE/crates/silex_dom/src/attribute.rs
+  --> $WORKSPACE/crates/silex_view/src/attribute.rs
    |
    | pub trait AttributeBuilder<'scope>: Sized {
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
    = help: items from traits can only be used if the trait is implemented and in scope
    = note: the following trait defines an item `class`, perhaps you need to implement it:
-           candidate #1: `silex_dom::attribute::GlobalAttributes`
+           candidate #1: `silex_view::attribute::GlobalAttributes`

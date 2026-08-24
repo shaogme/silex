@@ -2,15 +2,13 @@
 
 include!("../../src/lib.rs");
 
-use silex_core::prelude::*;
-use silex_dom::prelude::*;
 use silex_macros::component;
 
 #[component]
 fn MissingRxDefaultScope<'owner>(
-    children: AnyView<'owner>,
-    #[chain(default)] value: Rx<'owner, i32>,
-) -> impl View<'owner> {
+    children: silex_view::AnyView<'owner>,
+    #[chain(default)] value: silex_core::reactivity::Rx<'owner, i32>,
+) -> impl silex_view::View<'owner> {
     let _ = value;
     children
 }
