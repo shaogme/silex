@@ -51,9 +51,7 @@ fn mount_view<'scope, V: View<'scope>>(
     error_handler: &silex_core::ErrorHandlerToken<'scope>,
 ) -> SilexResult<MountInstance<'scope>> {
     let browser = BrowserDom::new(document());
-    let parent = browser
-        .from_web_sys_node(parent.clone().into())
-        .map_err(|error| SilexError::fatal(SilexErrorKind::Dom(error.to_string())))?;
+    let parent = browser.from_web_sys_node(parent.clone().into())?;
     let context = MountContext::for_parent(
         browser.context(),
         parent,
@@ -576,7 +574,7 @@ struct FailingAccordionView;
 
 impl<'scope> View<'scope> for FailingAccordionView {
     fn mount(&self, _context: &MountContext<'scope>) -> SilexResult<MountInstance<'scope>> {
-        Err(SilexError::fatal(SilexErrorKind::Dom(
+        Err(SilexError::fatal(SilexErrorKind::Framework(
             "intentional Accordion slot mount failure".to_string(),
         )))
     }

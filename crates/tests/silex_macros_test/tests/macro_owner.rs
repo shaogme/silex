@@ -39,15 +39,9 @@ where
     V: View<'owner>,
     P: Clone + Into<web_sys::Node>,
 {
-    let browser = BrowserDom::from_window().map_err(|error| {
-        silex::core::SilexError::fatal(silex::core::SilexErrorKind::Dom(error.to_string()))
-    })?;
+    let browser = BrowserDom::from_window()?;
     let dom = browser.context();
-    let parent = browser
-        .from_web_sys_node(parent.clone().into())
-        .map_err(|error| {
-            silex::core::SilexError::fatal(silex::core::SilexErrorKind::Dom(error.to_string()))
-        })?;
+    let parent = browser.from_web_sys_node(parent.clone().into())?;
     let context = MountContext::for_parent(dom, parent, owner.clone(), error_handler);
     let instance = context.mount(view)?;
     match context.transaction().commit() {

@@ -1,10 +1,10 @@
-use crate::context::MountContext;
-use crate::contract::Prop;
-use crate::event::{DomEvent, EventDescriptor, EventHandler};
-use crate::owner::{MountErrorHandler, MountOwnerToken};
-use silex_core::{
-    EffectPhase, ReactiveError, Rx, RxGet, RxWrite, SilexError, SilexErrorKind, SilexResult,
+use crate::{
+    context::MountContext,
+    contract::Prop,
+    event::{DomEvent, EventDescriptor, EventHandler},
+    owner::{MountErrorHandler, MountOwnerToken},
 };
+use silex_core::{EffectPhase, ReactiveError, Rx, RxGet, RxWrite, SilexError, SilexResult};
 use silex_dom::attribute::{
     AttributeRequest, AttributeTarget, AttributeValue, PropertyRequest, PropertyValue,
 };
@@ -300,10 +300,12 @@ impl<'scope> ReactiveBindingPlan<'scope> {
             bool_value: None,
         }
     }
+
     fn with_string_value(mut self, value: BindingString<'scope>) -> Self {
         self.string_value = Some(value);
         self
     }
+
     fn with_bool_value(mut self, value: BindingBool<'scope>) -> Self {
         self.bool_value = Some(value);
         self
@@ -339,7 +341,7 @@ impl<'scope> ReactiveBindingPlan<'scope> {
                 AttributeTarget::Class,
                 AttributeValue::text(update_value()?),
             ))
-            .map_err(crate::error::dom_error)
+            .map_err(Into::into)
         });
         let cleanup = Rc::new(move |dom: &DomContext, element: &DomElement| {
             dom.set_attribute(AttributeRequest::new(
@@ -347,7 +349,7 @@ impl<'scope> ReactiveBindingPlan<'scope> {
                 AttributeTarget::Class,
                 AttributeValue::Removed,
             ))
-            .map_err(crate::error::dom_error)
+            .map_err(Into::into)
         });
         Self::effect(ReactiveBindingTarget::DynamicClasses, update, cleanup)
             .with_string_value(value)
@@ -377,7 +379,7 @@ impl<'scope> ReactiveBindingPlan<'scope> {
                 AttributeTarget::Style,
                 AttributeValue::text(update_value()?),
             ))
-            .map_err(crate::error::dom_error)
+            .map_err(Into::into)
         });
         let cleanup = Rc::new(move |dom: &DomContext, element: &DomElement| {
             dom.set_attribute(AttributeRequest::new(
@@ -385,7 +387,7 @@ impl<'scope> ReactiveBindingPlan<'scope> {
                 AttributeTarget::Style,
                 AttributeValue::Removed,
             ))
-            .map_err(crate::error::dom_error)
+            .map_err(Into::into)
         });
         Self::effect(ReactiveBindingTarget::DynamicStyle, update, cleanup).with_string_value(value)
     }
@@ -396,6 +398,7 @@ impl<'scope> ReactiveBindingPlan<'scope> {
             .ok_or_else(|| SilexError::fatal(ReactiveError::NoSuchNode))
             .and_then(|value| value())
     }
+
     fn bool_value(&self) -> SilexResult<bool> {
         self.bool_value
             .as_ref()
@@ -687,28 +690,28 @@ fn apply_attr_target(
                 target.attr_name(),
                 property_value(target, value),
             ))
-            .map_err(crate::error::dom_error),
+            .map_err(Into::into),
         ApplyTarget::Attr(name) => dom
             .set_attribute(AttributeRequest::new(
                 element,
                 AttributeTarget::named(name.clone()),
                 attr_value(value),
             ))
-            .map_err(crate::error::dom_error),
+            .map_err(Into::into),
         ApplyTarget::Class => dom
             .set_attribute(AttributeRequest::new(
                 element,
                 AttributeTarget::Class,
                 attr_value(value),
             ))
-            .map_err(crate::error::dom_error),
+            .map_err(Into::into),
         ApplyTarget::Style => dom
             .set_attribute(AttributeRequest::new(
                 element,
                 AttributeTarget::Style,
                 attr_value(value),
             ))
-            .map_err(crate::error::dom_error),
+            .map_err(Into::into),
         ApplyTarget::Apply => Ok(()),
     }
 }
@@ -729,14 +732,14 @@ fn apply_string_target(
                 AttributeTarget::Class,
                 AttributeValue::text(value),
             ))
-            .map_err(crate::error::dom_error),
+            .map_err(Into::into),
         ReactiveBindingTarget::DynamicStyle => dom
             .set_attribute(AttributeRequest::new(
                 element,
                 AttributeTarget::Style,
                 AttributeValue::text(value),
             ))
-            .map_err(crate::error::dom_error),
+            .map_err(Into::into),
         ReactiveBindingTarget::StyleProperty(name) => set_style_property(dom, element, name, value),
         ReactiveBindingTarget::ClassToggle(_) | ReactiveBindingTarget::Custom => Ok(()),
     }
@@ -776,28 +779,28 @@ fn cleanup_target(
                     target.attr_name(),
                     PropertyValue::Removed,
                 ))
-                .map_err(crate::error::dom_error),
+                .map_err(Into::into),
             ApplyTarget::Attr(name) => dom
                 .set_attribute(AttributeRequest::new(
                     element,
                     AttributeTarget::named(name.clone()),
                     AttributeValue::Removed,
                 ))
-                .map_err(crate::error::dom_error),
+                .map_err(Into::into),
             ApplyTarget::Class => dom
                 .set_attribute(AttributeRequest::new(
                     element,
                     AttributeTarget::Class,
                     AttributeValue::Removed,
                 ))
-                .map_err(crate::error::dom_error),
+                .map_err(Into::into),
             ApplyTarget::Style => dom
                 .set_attribute(AttributeRequest::new(
                     element,
                     AttributeTarget::Style,
                     AttributeValue::Removed,
                 ))
-                .map_err(crate::error::dom_error),
+                .map_err(Into::into),
             ApplyTarget::Apply => Ok(()),
         },
         ReactiveBindingTarget::DynamicClasses => dom
@@ -806,14 +809,14 @@ fn cleanup_target(
                 AttributeTarget::Class,
                 AttributeValue::Removed,
             ))
-            .map_err(crate::error::dom_error),
+            .map_err(Into::into),
         ReactiveBindingTarget::DynamicStyle => dom
             .set_attribute(AttributeRequest::new(
                 element,
                 AttributeTarget::Style,
                 AttributeValue::Removed,
             ))
-            .map_err(crate::error::dom_error),
+            .map_err(Into::into),
         ReactiveBindingTarget::StyleProperty(name) => set_style_property(dom, element, name, ""),
         ReactiveBindingTarget::ClassToggle(name) => {
             let mut classes = HashSet::new();
@@ -840,7 +843,7 @@ fn set_classes(
             AttributeValue::text(values.join(" "))
         },
     ))
-    .map_err(crate::error::dom_error)
+    .map_err(Into::into)
 }
 
 /// 用 backend-neutral request 替换元素的 class 属性。
@@ -854,7 +857,7 @@ pub fn set_class_value(dom: &DomContext, element: &DomElement, value: &str) -> S
             AttributeValue::text(value)
         },
     ))
-    .map_err(crate::error::dom_error)
+    .map_err(Into::into)
 }
 
 /// 增删一组 class token，同时保留其它属性来源写入的 class。
@@ -872,7 +875,7 @@ pub fn update_class_tokens(
             remove: remove.into_iter().collect(),
         },
     ))
-    .map_err(crate::error::dom_error)
+    .map_err(Into::into)
 }
 
 fn set_style_property(
@@ -886,7 +889,7 @@ fn set_style_property(
         name,
         if value.is_empty() { None } else { Some(value) },
     )
-    .map_err(crate::error::dom_error)
+    .map_err(Into::into)
 }
 
 fn parse_style(value: &str) -> impl Iterator<Item = (&str, &str)> {
@@ -965,6 +968,7 @@ impl<'scope> AttrOp<'scope> {
     {
         value.into_op(target)
     }
+
     pub fn static_class(value: Cow<'scope, str>) -> Self {
         Self::CombinedClasses(CombinedClasses {
             statics: vec![value],
@@ -972,6 +976,7 @@ impl<'scope> AttrOp<'scope> {
             reactives: Vec::new(),
         })
     }
+
     pub fn static_classes(values: Vec<Cow<'scope, str>>) -> Self {
         Self::CombinedClasses(CombinedClasses {
             statics: values,
@@ -979,12 +984,15 @@ impl<'scope> AttrOp<'scope> {
             reactives: Vec::new(),
         })
     }
+
     pub fn class_toggle(name: Cow<'scope, str>, rx: Rx<'scope, bool>) -> Self {
         Self::Reactive(ReactiveBindingPlan::class_toggle(name, rx))
     }
+
     pub fn reactive_classes(rx: Rx<'scope, String>) -> Self {
         Self::Reactive(ReactiveBindingPlan::dynamic_classes(rx))
     }
+
     pub fn static_styles(values: Vec<(Cow<'scope, str>, Cow<'scope, str>)>) -> Self {
         Self::CombinedStyles(CombinedStyles {
             statics: values,
@@ -992,12 +1000,15 @@ impl<'scope> AttrOp<'scope> {
             sheets: Vec::new(),
         })
     }
+
     pub fn style_property(name: Cow<'scope, str>, rx: Rx<'scope, String>) -> Self {
         Self::Reactive(ReactiveBindingPlan::style_property(name, rx))
     }
+
     pub fn reactive_stylesheet(rx: Rx<'scope, String>) -> Self {
         Self::Reactive(ReactiveBindingPlan::dynamic_style(rx))
     }
+
     pub fn custom(
         callback: impl Fn(&DomElement, &MountContext<'scope>) -> SilexResult<()> + 'scope,
     ) -> Self {
@@ -1006,6 +1017,7 @@ impl<'scope> AttrOp<'scope> {
             callback: Rc::new(callback),
         }
     }
+
     pub fn custom_phase(
         phase: AttrPhase,
         callback: impl Fn(&DomElement, &MountContext<'scope>) -> SilexResult<()> + 'scope,
@@ -1015,11 +1027,13 @@ impl<'scope> AttrOp<'scope> {
             callback: Rc::new(callback),
         }
     }
+
     pub fn new_scoped(
         callback: impl Fn(&DomElement, &MountContext<'scope>) -> SilexResult<()> + 'scope,
     ) -> Self {
         Self::custom(callback)
     }
+
     pub fn on_commit(
         callback: impl Fn(&DomElement, &MountContext<'scope>) -> SilexResult<()> + 'scope,
     ) -> Self {
@@ -1205,7 +1219,7 @@ fn apply_styles<'scope>(
                 AttributeTarget::Style,
                 AttributeValue::text(text),
             ))
-            .map_err(crate::error::dom_error)
+            .map_err(Into::into)
         }),
         handler,
     )?;
@@ -1228,7 +1242,7 @@ fn apply_styles<'scope>(
                         AttributeValue::text(text)
                     },
                 ))
-                .map_err(crate::error::dom_error)
+                .map_err(Into::into)
         }),
         handler,
     )
@@ -1258,6 +1272,7 @@ impl<'scope> ApplyToDom<'scope> for AttrOp<'scope> {
     ) -> SilexResult<()> {
         self.clone().apply(element, context)
     }
+
     fn into_op(self, _target: ApplyTarget) -> AttrOp<'scope> {
         self
     }
@@ -1274,6 +1289,7 @@ impl<'scope> ApplyToDom<'scope> for AttributeGroup<'scope> {
         }
         Ok(())
     }
+
     fn into_op(self, _target: ApplyTarget) -> AttrOp<'scope> {
         if self.0.is_empty() {
             AttrOp::Noop
@@ -1291,6 +1307,7 @@ impl<'scope, 'a: 'scope> ApplyToDom<'scope> for &'a str {
     ) -> SilexResult<()> {
         apply_attr_target(context.dom(), element, &target, &Attr::from(*self))
     }
+
     fn into_op(self, target: ApplyTarget) -> AttrOp<'scope> {
         match target {
             ApplyTarget::Class => {
@@ -1317,6 +1334,7 @@ impl<'scope> ApplyToDom<'scope> for String {
     ) -> SilexResult<()> {
         apply_attr_target(context.dom(), element, &target, &Attr::from(self.clone()))
     }
+
     fn into_op(self, target: ApplyTarget) -> AttrOp<'scope> {
         AttrOp::Update(AttrUpdate {
             target,
@@ -1338,6 +1356,7 @@ impl<'scope> ApplyToDom<'scope> for &String {
             &Attr::from((*self).clone()),
         )
     }
+
     fn into_op(self, target: ApplyTarget) -> AttrOp<'scope> {
         self.to_string().into_op(target)
     }
@@ -1356,6 +1375,7 @@ impl<'scope, 'a: 'scope> ApplyToDom<'scope> for Cow<'a, str> {
             &Attr::from(self.to_string()),
         )
     }
+
     fn into_op(self, target: ApplyTarget) -> AttrOp<'scope> {
         match self {
             Cow::Borrowed(value) => value.into_op(target),
@@ -1372,6 +1392,7 @@ impl<'scope> ApplyToDom<'scope> for Attr<'scope> {
     ) -> SilexResult<()> {
         apply_attr_target(context.dom(), element, &target, self)
     }
+
     fn into_op(self, target: ApplyTarget) -> AttrOp<'scope> {
         AttrOp::Update(AttrUpdate {
             target,
@@ -1388,6 +1409,7 @@ impl<'scope> ApplyToDom<'scope> for bool {
     ) -> SilexResult<()> {
         apply_attr_target(context.dom(), element, &target, &Attr::from(*self))
     }
+
     fn into_op(self, target: ApplyTarget) -> AttrOp<'scope> {
         AttrOp::Update(AttrUpdate {
             target,
@@ -1416,6 +1438,7 @@ where
         }
         Ok(())
     }
+
     fn into_op(self, target: ApplyTarget) -> AttrOp<'scope> {
         T::binding_plan(self, ReactiveBindingContext::Value(target))
             .map_or(AttrOp::Noop, AttrOp::Reactive)
@@ -1434,6 +1457,7 @@ impl<'scope, V: ApplyToDom<'scope> + 'scope> ApplyToDom<'scope> for Option<V> {
         }
         Ok(())
     }
+
     fn into_op(self, target: ApplyTarget) -> AttrOp<'scope> {
         self.map_or(AttrOp::Noop, |value| value.into_op(target))
     }
@@ -1450,6 +1474,7 @@ impl<'scope, V: ApplyToDom<'scope> + 'scope> ApplyToDom<'scope> for Vec<V> {
         }
         Ok(())
     }
+
     fn into_op(self, target: ApplyTarget) -> AttrOp<'scope> {
         AttrOp::Sequence(
             self.into_iter()
@@ -1470,6 +1495,7 @@ impl<'scope, V: ApplyToDom<'scope> + 'scope, const N: usize> ApplyToDom<'scope> 
         }
         Ok(())
     }
+
     fn into_op(self, target: ApplyTarget) -> AttrOp<'scope> {
         AttrOp::Sequence(
             self.into_iter()
@@ -1496,6 +1522,7 @@ where
         }
         Ok(())
     }
+
     fn into_op(self, target: ApplyTarget) -> AttrOp<'scope> {
         T::binding_plan(
             self.1,
@@ -1525,6 +1552,7 @@ where
         };
         apply_attr_target(context.dom(), element, &target, &Attr::from(self.1.clone()))
     }
+
     fn into_op(self, target: ApplyTarget) -> AttrOp<'scope> {
         let key: Cow<'static, str> = self.0.into();
         let target = if target == ApplyTarget::Apply {
@@ -1560,6 +1588,7 @@ where
         };
         apply_attr_target(context.dom(), element, &target, &Attr::from(self.1))
     }
+
     fn into_op(self, target: ApplyTarget) -> AttrOp<'scope> {
         (self.0, self.1.to_string()).into_op(target)
     }
@@ -1590,6 +1619,7 @@ where
             apply_attr_target(context.dom(), element, &target, &Attr::from(self.1))
         }
     }
+
     fn into_op(self, target: ApplyTarget) -> AttrOp<'scope> {
         let key: Cow<'static, str> = self.0.into();
         if target == ApplyTarget::Class {
@@ -1796,12 +1826,14 @@ pub trait AttributeBuilder<'scope>: Sized {
     {
         self.build_attribute(ApplyTarget::attr(name), value)
     }
+
     fn prop<V>(self, name: impl Into<Cow<'static, str>>, value: V) -> Self
     where
         V: IntoStorable<'scope>,
     {
         self.build_attribute(ApplyTarget::prop(name), value)
     }
+
     fn on<E, F, M>(self, event: E, callback: F) -> Self
     where
         E: EventDescriptor + 'static,
@@ -1809,6 +1841,7 @@ pub trait AttributeBuilder<'scope>: Sized {
     {
         self.build_event(event, callback)
     }
+
     fn apply<V>(self, value: V) -> Self
     where
         V: IntoStorable<'scope>,
@@ -1821,24 +1854,31 @@ pub trait GlobalAttributes<'scope>: AttributeBuilder<'scope> {
     fn id(self, value: impl IntoStorable<'scope>) -> Self {
         self.attr("id", value)
     }
+
     fn class(self, value: impl IntoStorable<'scope>) -> Self {
         self.attr("class", value)
     }
+
     fn style(self, value: impl IntoStorable<'scope>) -> Self {
         self.attr("style", value)
     }
+
     fn title(self, value: impl IntoStorable<'scope>) -> Self {
         self.attr("title", value)
     }
+
     fn lang(self, value: impl IntoStorable<'scope>) -> Self {
         self.attr("lang", value)
     }
+
     fn dir(self, value: impl IntoStorable<'scope>) -> Self {
         self.attr("dir", value)
     }
+
     fn tabindex(self, value: impl IntoStorable<'scope>) -> Self {
         self.attr("tabindex", value)
     }
+
     fn hidden(self, value: impl IntoStorable<'scope>) -> Self {
         self.attr("hidden", value)
     }
@@ -1849,21 +1889,27 @@ pub trait AriaAttributes<'scope>: AttributeBuilder<'scope> {
     fn role(self, value: impl IntoStorable<'scope>) -> Self {
         self.attr("role", value)
     }
+
     fn aria_label(self, value: impl IntoStorable<'scope>) -> Self {
         self.attr("aria-label", value)
     }
+
     fn aria_hidden(self, value: impl IntoStorable<'scope>) -> Self {
         self.attr("aria-hidden", value)
     }
+
     fn aria_expanded(self, value: impl IntoStorable<'scope>) -> Self {
         self.attr("aria-expanded", value)
     }
+
     fn aria_controls(self, value: impl IntoStorable<'scope>) -> Self {
         self.attr("aria-controls", value)
     }
+
     fn aria_disabled(self, value: impl IntoStorable<'scope>) -> Self {
         self.attr("aria-disabled", value)
     }
+
     fn aria_checked(self, value: impl IntoStorable<'scope>) -> Self {
         self.attr("aria-checked", value)
     }
@@ -1877,41 +1923,41 @@ pub trait GlobalEventAttributes<'scope>: AttributeBuilder<'scope> {
     {
         self.build_attribute(ApplyTarget::Class, value)
     }
+
     fn class_toggle<C>(self, name: &str, condition: C) -> Self
     where
         (String, C): IntoStorable<'scope>,
     {
         self.build_attribute(ApplyTarget::Class, (name.to_string(), condition))
     }
+
     fn node_ref(self, node_ref: NodeRef<'scope>) -> Self {
         self.apply(AttrOp::new_scoped(move |element, context| {
             let owner = context.owner();
-            node_ref
-                .set(element.node().clone())
-                .map_err(|error| SilexError::fatal(SilexErrorKind::Dom(error.to_string())))?;
-            let cleanup_ref = node_ref.clone();
+            let binding = node_ref
+                .bind_for_mount(element.node().clone())
+                .map_err(SilexError::from)?;
             owner.on_cleanup(
-                Box::new(move || {
-                    cleanup_ref
-                        .clear()
-                        .map_err(|error| SilexError::fatal(SilexErrorKind::Dom(error.to_string())))
-                }),
+                Box::new(move || binding.clear_if_current().map(|_| ()).map_err(Into::into)),
                 context.error_handler(),
             )
         }))
     }
+
     fn on_click<F, M>(self, callback: F) -> Self
     where
         F: EventHandler<'scope, M> + Clone + 'scope,
     {
         self.build_event(crate::event::click, callback)
     }
+
     fn on_input<F, M>(self, callback: F) -> Self
     where
         F: EventHandler<'scope, M> + Clone + 'scope,
     {
         self.build_event(crate::event::input, callback)
     }
+
     /// 将表单控件的当前 value 与可写响应式值建立双向绑定。
     fn bind_value<T, S>(self, signal: S) -> Self
     where
@@ -1927,6 +1973,7 @@ pub trait GlobalEventAttributes<'scope>: AttributeBuilder<'scope> {
         })
         .prop("value", signal)
     }
+
     fn on_change<F, M>(self, callback: F) -> Self
     where
         F: EventHandler<'scope, M> + Clone + 'scope,

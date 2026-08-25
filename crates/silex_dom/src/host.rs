@@ -40,7 +40,6 @@ pub struct HostResource<'scope> {
 }
 
 impl HostResource<'static> {
-    #[cfg(any(feature = "browser", test))]
     pub(crate) fn with_cancel<F>(cancel: F) -> Self
     where
         F: FnOnce() -> DomResult<()> + 'static,
@@ -50,17 +49,6 @@ impl HostResource<'static> {
                 active: Cell::new(true),
                 state: Cell::new(HostResourceState::Active),
                 cancel: RefCell::new(Some(Box::new(cancel))),
-            }),
-            marker: PhantomData,
-        }
-    }
-
-    pub(crate) fn inert() -> Self {
-        Self {
-            inner: Rc::new(HostResourceInner {
-                active: Cell::new(false),
-                state: Cell::new(HostResourceState::Inert),
-                cancel: RefCell::new(None),
             }),
             marker: PhantomData,
         }
@@ -106,7 +94,7 @@ impl Drop for HostResource<'_> {
 #[cfg(test)]
 mod tests {
     use super::{HostResource, HostResourceState};
-    use crate::error::DomResult;
+    use crate::error::{DomError, DomResult};
     use std::{cell::Cell, rc::Rc};
 
     #[test]
@@ -127,7 +115,7 @@ mod tests {
     #[test]
     fn action_error_does_not_reopen_resource() {
         let resource = HostResource::with_cancel(|| -> DomResult<()> {
-            Err(crate::error::DomError::Backend {
+            Err(DomError::Backend {
                 operation: "cancel",
                 message: String::from("failed"),
             })

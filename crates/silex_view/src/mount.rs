@@ -16,10 +16,7 @@ impl<'scope> MountContext<'scope> {
         let owner = self.owner();
         let transaction = self.transaction().child()?;
         let provisional_owner = OwnerMount::new(owner.child());
-        let fragment = self
-            .dom()
-            .create_fragment()
-            .map_err(crate::error::dom_error)?;
+        let fragment = self.dom().create_fragment()?;
         let child_context = self.with_parts(
             MountTarget::append(self.dom().clone(), fragment.clone()),
             self.ancestry().clone(),
@@ -44,7 +41,7 @@ impl<'scope> MountContext<'scope> {
                     &provisional_owner,
                     &fragment,
                     &[],
-                    crate::error::dom_error(error),
+                    error.into(),
                 );
             }
         };
@@ -129,22 +126,13 @@ impl<'scope> MountContext<'scope> {
 
     fn mount_text(&self, text: &str) -> SilexResult<MountInstance<'scope>> {
         let cleanup_dom = self.dom().clone();
-        let node = self
-            .dom()
-            .create_text(text)
-            .map_err(crate::error::dom_error)?;
+        let node = self.dom().create_text(text)?;
         self.target().append_node(&node)?;
         let cleanup_node = node.clone();
         if let Err(error) = self.owner().on_cleanup(
             Box::new(move || {
-                if cleanup_dom
-                    .parent(&cleanup_node)
-                    .map_err(crate::error::dom_error)?
-                    .is_some()
-                {
-                    cleanup_dom
-                        .remove(&cleanup_node)
-                        .map_err(crate::error::dom_error)?;
+                if cleanup_dom.parent(&cleanup_node)?.is_some() {
+                    cleanup_dom.remove(&cleanup_node)?;
                 }
                 Ok(())
             }),

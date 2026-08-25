@@ -1,4 +1,4 @@
-use silex::bootstrap::{BootstrapError, BrowserBootstrap, JsAppHost};
+use silex::bootstrap::{BrowserBootstrap, JsAppHost};
 use silex::dom::CleanupSink;
 use silex::prelude::*;
 use silex::reexports::*;
@@ -397,14 +397,14 @@ fn App<'scope>(
 }
 
 /// Mount the counter application into the conventional `#app` target.
-pub fn mount_counter() -> Result<JsAppHost, BootstrapError> {
+pub fn mount_counter() -> SilexResult<JsAppHost> {
     let mut bootstrap = BrowserBootstrap::from_id("app", CleanupSink::console())?;
     bootstrap.mount(Runtime::new(), mount_counter_view)?;
     bootstrap.into_js_host()
 }
 
 /// Mount the counter application into a caller-provided target node.
-pub fn mount_counter_into(target: web_sys::Node) -> Result<JsAppHost, BootstrapError> {
+pub fn mount_counter_into(target: web_sys::Node) -> SilexResult<JsAppHost> {
     let mut bootstrap = BrowserBootstrap::from_web_sys(target, CleanupSink::console())?;
     bootstrap.mount(Runtime::new(), mount_counter_view)?;
     bootstrap.into_js_host()

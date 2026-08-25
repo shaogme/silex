@@ -6,13 +6,15 @@ error[E0277]: the trait bound `Signal<'_, Hex>: silex_view::View<'_>` is not sat
    |         |
    |         required by a bound introduced by this call
    |
-help: the trait `silex_view::View<'_>` is implemented for `Signal<'_, T>`
+help: the trait `silex_view::View<'_>` is conditionally implemented for `Signal<'_, T>`
   --> $WORKSPACE/crates/silex_view/src/reactive.rs
    |
    | /             impl<'scope, T: 'scope> View<'scope> for $ty<'scope, T>
    | |             where
    | |                 Rx<'scope, T>: View<'scope>,
-   | |____________________________________________^
+   | |________________________________------------^
+   |                                  |
+   |                                  unsatisfied requirement introduced here: `silex_core::Rx<'_, Hex>: silex_view::View<'_>`
 ...
    |   impl_view_forward_to_rx!(ReadSignal, Signal, Computed, StoredValue);
    |   ------------------------------------------------------------------- in this macro invocation

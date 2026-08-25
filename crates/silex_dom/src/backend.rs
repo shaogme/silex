@@ -1,6 +1,6 @@
 use crate::{
     attribute::{AttributeRequest, PropertyRequest},
-    error::DomResult,
+    error::{DomError, DomResult},
     event::{PhysicalEventRequest, WindowEventRequest},
     host::HostResource,
     tree::{
@@ -33,6 +33,16 @@ impl BackendId {
 /// behind those handles, but it must reject handles from another identity.
 pub trait DomBackend {
     fn backend_id(&self) -> BackendId;
+
+    fn check_node(&self, node: &DomNode) -> DomResult<()> {
+        if node.backend_id() != self.backend_id() {
+            return Err(DomError::CrossContext {
+                expected: self.backend_id().value(),
+                actual: node.backend_id().value(),
+            });
+        }
+        Ok(())
+    }
 
     fn document(&self) -> DomResult<DomDocument>;
 
@@ -75,34 +85,34 @@ pub trait DomBackend {
         value: Option<&str>,
     ) -> DomResult<()> {
         let _ = (element, name, value);
-        Err(crate::error::DomError::Unsupported {
+        Err(DomError::Unsupported {
             capability: "style property",
         })
     }
 
     fn get_attribute(&self, element: &DomElement, name: &str) -> DomResult<Option<String>> {
         let _ = (element, name);
-        Err(crate::error::DomError::Unsupported {
+        Err(DomError::Unsupported {
             capability: "attribute read",
         })
     }
 
     fn focus(&self, element: &DomElement) -> DomResult<()> {
         let _ = element;
-        Err(crate::error::DomError::Unsupported {
+        Err(DomError::Unsupported {
             capability: "focus",
         })
     }
 
     fn active_element(&self) -> DomResult<Option<DomElement>> {
-        Err(crate::error::DomError::Unsupported {
+        Err(DomError::Unsupported {
             capability: "active element",
         })
     }
 
     fn contains(&self, parent: &DomElement, child: &DomNode) -> DomResult<bool> {
         let _ = (parent, child);
-        Err(crate::error::DomError::Unsupported {
+        Err(DomError::Unsupported {
             capability: "contains",
         })
     }
@@ -115,7 +125,7 @@ pub trait DomBackend {
 
     fn listen_window(&self, request: &WindowEventRequest) -> DomResult<HostResource<'static>> {
         let _ = request;
-        Err(crate::error::DomError::Unsupported {
+        Err(DomError::Unsupported {
             capability: "window event listener",
         })
     }

@@ -106,6 +106,17 @@ async fn flush_browser_tasks() {
     }
 }
 
+fn node_ref_cleanup_observed() -> bool {
+    let global: JsValue = js_sys::global().into();
+    Reflect::get(
+        &global,
+        &JsValue::from_str("__silex_showcase_node_ref_cleanup"),
+    )
+    .expect("NodeRef cleanup probe should exist")
+    .as_bool()
+    .expect("NodeRef cleanup probe should be boolean")
+}
+
 fn stability_slider(target: &DomElement) -> HtmlInputElement {
     target
         .query_selector("input[type='range']")
@@ -268,7 +279,7 @@ async fn basics_reactive_greeting_updates_after_submit() {
 }
 
 #[wasm_bindgen_test(async)]
-async fn basics_node_ref_check_reports_mounted_input() {
+async fn basics_node_ref_focus_uses_the_mounted_input_and_cleans_up() {
     set_path("/basics");
     let target = target();
     let mut host = mount_showcase_into(target.clone().into()).expect("showcase should mount");
@@ -277,30 +288,43 @@ async fn basics_node_ref_check_reports_mounted_input() {
         target
             .text_content()
             .unwrap_or_default()
-            .contains("Input ref has not been checked")
+            .contains("NodeRef focus is ready")
     );
-    assert!(
-        target
-            .query_selector("input[placeholder='I will be focused...']")
-            .expect("NodeRef input query should succeed")
-            .is_some()
-    );
+    let input = target
+        .query_selector("input[placeholder='I will be focused by NodeRef']")
+        .expect("NodeRef input query should succeed")
+        .expect("NodeRef input should be mounted")
+        .dyn_into::<HtmlInputElement>()
+        .expect("NodeRef target should be an input");
+    let input_node: Node = input.clone().into();
+    assert!(!node_ref_cleanup_observed());
 
-    button_with_text(&target, "Check Input Ref")
+    button_with_text(&target, "Focus Input via NodeRef")
         .dispatch_event(&web_sys::MouseEvent::new("click").expect("click can be created"))
-        .expect("NodeRef check click should dispatch");
+        .expect("NodeRef focus click should dispatch");
     flush_browser_tasks().await;
 
     assert!(
         target
             .text_content()
             .unwrap_or_default()
-            .contains("Input ref is available"),
-        "NodeRef check should report the mounted input"
+            .contains("NodeRef focus succeeded"),
+        "focus failure must not be reported as success"
+    );
+    let active = document()
+        .active_element()
+        .expect("document should have an active element after focus");
+    assert!(
+        active.is_same_node(Some(&input_node)),
+        "NodeRef focus should activate the queried input node"
     );
 
     host.unmount().expect("showcase should unmount");
     assert!(target.first_child().is_none());
+    assert!(
+        node_ref_cleanup_observed(),
+        "NodeRef cleanup hook should observe an empty ref after unmount"
+    );
     detach(&target.into());
     set_path("/");
 }

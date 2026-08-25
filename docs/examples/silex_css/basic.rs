@@ -1,7 +1,7 @@
 use std::error::Error;
 
 #[cfg(target_arch = "wasm32")]
-use silex_core::{Runtime, SilexContext, SilexError, SilexErrorKind};
+use silex_core::{DomError, Runtime, SilexContext, SilexError};
 #[cfg(target_arch = "wasm32")]
 use silex_css::prelude::*;
 #[cfg(target_arch = "wasm32")]
@@ -16,17 +16,13 @@ use silex_view::{Element, MountedApp};
 pub fn run() -> Result<(), Box<dyn Error>> {
     #[cfg(target_arch = "wasm32")]
     {
-        let browser = BrowserDom::from_window()
-            .map_err(|error| SilexError::fatal(SilexErrorKind::Dom(error.to_string())))?;
-        let host = browser
-            .context()
-            .document_body()
-            .map_err(|error| SilexError::fatal(SilexErrorKind::Dom(error.to_string())))?
-            .ok_or_else(|| {
-                SilexError::fatal(SilexErrorKind::Dom(
-                    "document body is unavailable".to_string(),
-                ))
-            })?;
+        let browser = BrowserDom::from_window()?;
+        let host = browser.context().document_body()?.ok_or_else(|| {
+            SilexError::from(DomError::Backend {
+                operation: "document_body",
+                message: "document body is unavailable".to_string(),
+            })
+        })?;
         let mut app = MountedApp::new(
             Runtime::new(),
             browser.context(),

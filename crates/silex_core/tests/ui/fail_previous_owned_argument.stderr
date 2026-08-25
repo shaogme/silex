@@ -1,4 +1,4 @@
-error[E0277]: expected a `FnMut(Option<&_>)` closure, found `silex_reactivity::error::ErrorHandlerToken<'_, SilexError>`
+error[E0277]: expected an `FnMut(Option<&_>)` closure, found `silex_reactivity::error::ErrorHandlerToken<'_, SilexError>`
   --> tests/ui/fail_previous_owned_argument.rs:8:13
    |
  6 |           let _ = owner.effect_with_previous(

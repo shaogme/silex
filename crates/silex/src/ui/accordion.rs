@@ -1,4 +1,5 @@
 use silex_core::prelude::*;
+use silex_dom::attribute::{AttributeRequest, AttributeTarget, AttributeValue};
 use silex_html::{button, div, path, svg};
 use silex_macros::{component, tw};
 use silex_view::prelude::*;
@@ -32,10 +33,7 @@ fn accordion_relation<'scope>(relation: AccordionRelation) -> AttrOp<'scope> {
             let Some(item) = accordion_item(&ancestry, &dom) else {
                 return Ok(());
             };
-            let Some(item_id) = dom
-                .get_attribute(&item, "data-accordion-item-id")
-                .map_err(|error| SilexError::fatal(SilexErrorKind::Dom(error.to_string())))?
-            else {
+            let Some(item_id) = dom.get_attribute(&item, "data-accordion-item-id")? else {
                 return Ok(());
             };
 
@@ -51,18 +49,17 @@ fn accordion_relation<'scope>(relation: AccordionRelation) -> AttrOp<'scope> {
                     format!("{item_id}-trigger"),
                 ),
             };
-            dom.set_attribute(silex_dom::attribute::AttributeRequest::new(
+            dom.set_attribute(AttributeRequest::new(
                 &element_for_task,
-                silex_dom::attribute::AttributeTarget::named("id"),
-                silex_dom::attribute::AttributeValue::text(id),
-            ))
-            .map_err(|error| SilexError::fatal(SilexErrorKind::Dom(error.to_string())))?;
-            dom.set_attribute(silex_dom::attribute::AttributeRequest::new(
+                AttributeTarget::named("id"),
+                AttributeValue::text(id),
+            ))?;
+            dom.set_attribute(AttributeRequest::new(
                 &element_for_task,
-                silex_dom::attribute::AttributeTarget::named(related_attribute),
-                silex_dom::attribute::AttributeValue::text(related_id),
-            ))
-            .map_err(|error| SilexError::fatal(SilexErrorKind::Dom(error.to_string())))
+                AttributeTarget::named(related_attribute),
+                AttributeValue::text(related_id),
+            ))?;
+            Ok(())
         })?;
 
         let element_for_cleanup = element.clone();
@@ -73,15 +70,15 @@ fn accordion_relation<'scope>(relation: AccordionRelation) -> AttrOp<'scope> {
         let dom = context.dom().clone();
         context.owner().on_cleanup(
             Box::new(move || -> SilexResult<()> {
-                let _ = dom.set_attribute(silex_dom::attribute::AttributeRequest::new(
+                let _ = dom.set_attribute(AttributeRequest::new(
                     &element_for_cleanup,
-                    silex_dom::attribute::AttributeTarget::named("id"),
-                    silex_dom::attribute::AttributeValue::Removed,
+                    AttributeTarget::named("id"),
+                    AttributeValue::Removed,
                 ));
-                let _ = dom.set_attribute(silex_dom::attribute::AttributeRequest::new(
+                let _ = dom.set_attribute(AttributeRequest::new(
                     &element_for_cleanup,
-                    silex_dom::attribute::AttributeTarget::named(related_attribute),
-                    silex_dom::attribute::AttributeValue::Removed,
+                    AttributeTarget::named(related_attribute),
+                    AttributeValue::Removed,
                 ));
                 Ok(())
             }),
@@ -92,9 +89,8 @@ fn accordion_relation<'scope>(relation: AccordionRelation) -> AttrOp<'scope> {
 }
 
 fn focus_event_target(event: &DomEvent) -> SilexResult<()> {
-    event
-        .focus_target()
-        .map_err(|error| SilexError::fatal(SilexErrorKind::Dom(error.to_string())))
+    event.focus_target()?;
+    Ok(())
 }
 
 fn focus_content_trigger(
@@ -104,8 +100,7 @@ fn focus_content_trigger(
 ) -> SilexResult<()> {
     if let Some(item) = accordion_item(ancestry, dom) {
         let trigger = dom
-            .children(item.node())
-            .map_err(|error| SilexError::fatal(SilexErrorKind::Dom(error.to_string())))?
+            .children(item.node())?
             .into_iter()
             .filter_map(|node| dom.element(&node).ok())
             .find(|element| {
@@ -116,9 +111,8 @@ fn focus_content_trigger(
                     == Some("accordion-trigger")
             });
         if let Some(trigger) = trigger {
-            return dom
-                .focus(&trigger)
-                .map_err(|error| SilexError::fatal(SilexErrorKind::Dom(error.to_string())));
+            dom.focus(&trigger)?;
+            return Ok(());
         }
     }
 

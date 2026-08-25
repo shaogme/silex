@@ -1,13 +1,13 @@
 use silex_core::{EffectPhase, RxReadRef, SilexError, SilexErrorKind, SilexResult, reactivity::Rx};
 use silex_dom::{
-    DomContext, DomElement, DomError, DomNode,
+    DomContext, DomElement, DomNode,
     attribute::{AttributeRequest, AttributeTarget, AttributeValue},
     tree::ElementSpec,
 };
 use silex_macros::component;
 use silex_view::{
     AnyView, ApplyTarget, AttrOp, IntoStorable, MountContext, MountInstance, MountOwner,
-    MountOwnerToken, MountTarget, MountTransaction, View,
+    MountOwnerToken, MountTarget, MountTransaction, View, ViewError,
 };
 use std::{
     borrow::Cow,
@@ -26,9 +26,7 @@ pub(crate) struct PortalVisibilityRoot {
 
 impl PortalVisibilityRoot {
     pub(crate) fn create(dom: DomContext, open: bool) -> SilexResult<Self> {
-        let element = dom
-            .create_element(ElementSpec::new("div"))
-            .map_err(dom_error)?;
+        let element = dom.create_element(ElementSpec::new("div"))?;
         set_attribute(
             &dom,
             &element,
@@ -93,9 +91,10 @@ impl<'scope> PortalHostAttrs<'scope> {
     {
         let target = ApplyTarget::attr(name);
         if let Some(name) = reserved_host_attribute(&target) {
-            return Err(SilexError::fatal(SilexErrorKind::Dom(format!(
-                "PortalHostAttrs field {name} is reserved; use the Portal open signal"
-            ))));
+            return Err(SilexError::from(ViewError::Invariant {
+                operation: "PortalHostAttrs::try_attr",
+                message: format!("field {name} is reserved; use the Portal open signal"),
+            }));
         }
         self.attrs
             .push(AttrOp::build(value.into_storable(), target));
@@ -151,10 +150,6 @@ struct PortalView<'scope> {
     host_attrs: PortalHostAttrs<'scope>,
 }
 
-fn dom_error(error: DomError) -> SilexError {
-    SilexError::fatal(SilexErrorKind::Dom(error.to_string()))
-}
-
 fn set_attribute(
     dom: &DomContext,
     element: &DomElement,
@@ -165,8 +160,8 @@ fn set_attribute(
         element,
         AttributeTarget::named(name),
         value,
-    ))
-    .map_err(dom_error)
+    ))?;
+    Ok(())
 }
 
 fn close_owner<'scope>(owner: &MountOwnerToken<'scope>) -> SilexResult<()> {
@@ -176,8 +171,8 @@ fn close_owner<'scope>(owner: &MountOwnerToken<'scope>) -> SilexResult<()> {
 }
 
 fn remove_node(dom: &DomContext, node: &DomNode) -> SilexResult<()> {
-    if dom.parent(node).map_err(dom_error)?.is_some() {
-        dom.remove(node).map_err(dom_error)?;
+    if dom.parent(node)?.is_some() {
+        dom.remove(node)?;
     }
     Ok(())
 }
@@ -205,12 +200,12 @@ impl<'scope> PortalView<'scope> {
         let target = match self.mount_to.clone() {
             Some(target) => target,
             None => dom
-                .document_body()
-                .map_err(dom_error)?
+                .document_body()?
                 .ok_or_else(|| {
-                    SilexError::fatal(SilexErrorKind::Dom(
-                        "Portal requires document.body when no target is supplied".to_string(),
-                    ))
+                    SilexError::from(ViewError::Invariant {
+                        operation: "Portal::mount",
+                        message: "document.body is required when no target is supplied".to_string(),
+                    })
                 })?
                 .node()
                 .clone(),
@@ -220,12 +215,9 @@ impl<'scope> PortalView<'scope> {
             .open
             .as_ref()
             .map_or(Ok(true), |open| open.with_untracked(|value| *value))?;
-        let host = dom
-            .create_element(ElementSpec::new("div"))
-            .map_err(dom_error)?;
+        let host = dom.create_element(ElementSpec::new("div"))?;
         let root = PortalVisibilityRoot::create(dom.clone(), initial_open)?;
-        dom.append(host.node(), root.element().node())
-            .map_err(dom_error)?;
+        dom.append(host.node(), root.element().node())?;
         let host_owner = context.owner().child();
         let attached = Rc::new(Cell::new(false));
         let error_handler = context.error_handler();
@@ -253,9 +245,7 @@ impl<'scope> PortalView<'scope> {
         context.on_commit(move || {
             let attempt = catch_unwind(AssertUnwindSafe(|| {
                 (|| {
-                    dom_for_commit
-                        .append(&target_for_commit, &host_for_commit)
-                        .map_err(dom_error)?;
+                    dom_for_commit.append(&target_for_commit, &host_for_commit)?;
                     attached_for_commit.set(true);
                     match content_mode {
                         PortalContentMode::KeepAlive => {
@@ -281,9 +271,11 @@ impl<'scope> PortalView<'scope> {
                         }
                         PortalContentMode::UnmountWhenClosed => {
                             let open = open.ok_or_else(|| {
-                                SilexError::fatal(SilexErrorKind::Dom(
-                                    "UnmountWhenClosed Portal requires an open signal".to_string(),
-                                ))
+                                SilexError::from(ViewError::Invariant {
+                                    operation: "Portal::mount",
+                                    message: "UnmountWhenClosed requires an open signal"
+                                        .to_string(),
+                                })
                             })?;
                             let active = Rc::new(RefCell::new(
                                 None::<(MountOwnerToken<'scope>, MountInstance<'scope>)>,

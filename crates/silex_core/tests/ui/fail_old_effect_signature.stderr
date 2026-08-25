@@ -1,4 +1,4 @@
-error[E0277]: expected a `FnMut()` closure, found `silex_reactivity::error::ErrorHandlerToken<'_, SilexError>`
+error[E0277]: expected an `FnMut()` closure, found `silex_reactivity::error::ErrorHandlerToken<'_, SilexError>`
   --> tests/ui/fail_old_effect_signature.rs:8:13
    |
  6 |           let _ = owner.effect(

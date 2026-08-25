@@ -8,10 +8,15 @@ pub mod persistence;
 pub mod routes;
 
 use advanced::UserSettingsStore;
-use silex::bootstrap::{BootstrapError, BrowserBootstrap, JsAppHost};
+use silex::bootstrap::{BrowserBootstrap, JsAppHost};
 use silex::dom::CleanupSink;
 use silex::prelude::*;
-use silex::reexports::*;
+use silex::reexports::web_sys;
+
+#[cfg(target_arch = "wasm32")]
+use silex::reexports::{js_sys, wasm_bindgen::JsValue};
+
+use std::rc::Rc;
 
 router! {
     pub enum CssRoute {
@@ -60,6 +65,8 @@ fn App<'scope>(
     #[ctx] ctx: SilexContext<'scope>,
     i18n: I18nStore<'scope>,
     store: UserSettingsStore<'scope, 'scope>,
+    dom_action: MountDomAction<'scope>,
+    cleanup_hook: Rc<dyn Fn(bool) + 'scope>,
 ) -> impl View<'scope> + 'scope {
     let theme = store
         .theme
@@ -67,7 +74,9 @@ fn App<'scope>(
 
     let table = AppRoute::table(move |route, ctx| match route {
         AppRoute::Home => routes::HomePage(ctx).build().into_any(),
-        AppRoute::Basics => basics::BasicsPage(ctx).build().into_any(),
+        AppRoute::Basics => basics::BasicsPage(ctx, dom_action.clone(), cleanup_hook.clone())
+            .build()
+            .into_any(),
         AppRoute::Flow => flow_control::FlowPage(ctx).build().into_any(),
         AppRoute::I18n => i18n_demo::I18nPage(ctx, i18n).build().into_any(),
         AppRoute::Net => net_demo::NetDemoPage(ctx).build().into_any(),
@@ -121,14 +130,14 @@ fn App<'scope>(
 }
 
 /// Mount the showcase into the conventional `#app` target.
-pub fn mount_showcase() -> Result<JsAppHost, BootstrapError> {
+pub fn mount_showcase() -> SilexResult<JsAppHost> {
     let mut bootstrap = BrowserBootstrap::from_id("app", CleanupSink::console())?;
     bootstrap.mount(Runtime::new(), mount_showcase_view)?;
     bootstrap.into_js_host()
 }
 
 /// Mount the showcase into a caller-provided target node.
-pub fn mount_showcase_into(target: web_sys::Node) -> Result<JsAppHost, BootstrapError> {
+pub fn mount_showcase_into(target: web_sys::Node) -> SilexResult<JsAppHost> {
     let mut bootstrap = BrowserBootstrap::from_web_sys(target, CleanupSink::console())?;
     bootstrap.mount(Runtime::new(), mount_showcase_view)?;
     bootstrap.into_js_host()
@@ -207,9 +216,38 @@ fn mount_showcase_view<'scope>(ctx: &MountBuilderContext<'scope>) -> SilexResult
         .default(std::borrow::Cow::Borrowed("Guest"))
         .build()?;
     let store = UserSettingsStore::from_handles(owner, theme, notifications, username)?;
+    let cleanup_hook = node_ref_cleanup_hook();
 
     ctx.mount_unit(
-        App(SilexContext::new(owner, error_handler), i18n, store).build(),
+        App(
+            SilexContext::new(owner, error_handler),
+            i18n,
+            store,
+            ctx.dom_action(),
+            cleanup_hook,
+        )
+        .build(),
         error_handler,
     )
+}
+
+#[cfg(target_arch = "wasm32")]
+const NODE_REF_CLEANUP_PROBE: &str = "__silex_showcase_node_ref_cleanup";
+
+#[cfg(target_arch = "wasm32")]
+fn node_ref_cleanup_hook() -> Rc<dyn Fn(bool)> {
+    let global: JsValue = js_sys::global().into();
+    let key = JsValue::from_str(NODE_REF_CLEANUP_PROBE);
+    let _ = js_sys::Reflect::set(&global, &key, &JsValue::from_bool(false));
+
+    Rc::new(move |cleared| {
+        let global: JsValue = js_sys::global().into();
+        let key = JsValue::from_str(NODE_REF_CLEANUP_PROBE);
+        let _ = js_sys::Reflect::set(&global, &key, &JsValue::from_bool(cleared));
+    })
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn node_ref_cleanup_hook() -> Rc<dyn Fn(bool)> {
+    Rc::new(|_| {})
 }

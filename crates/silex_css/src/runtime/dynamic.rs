@@ -13,7 +13,10 @@ use crate::{
     types,
 };
 use silex_core::{EffectPhase, ErrorReporter, Rx, RxGet, SilexError, SilexErrorKind, SilexResult};
-use silex_dom::{DomContext, DomElement};
+use silex_dom::{
+    DomContext, DomElement,
+    attribute::{AttributeRequest, AttributeTarget, AttributeValue},
+};
 use silex_view::{
     AttrOp as ViewAttrOp, MountContext as ViewMountContext,
     MountErrorHandler as ViewMountErrorHandler, MountInstance as ViewMountInstance,
@@ -413,15 +416,14 @@ impl<'scope> ViewApplyToDom<'scope> for DynamicCss<'scope> {
             let rendered = render_static_template(css, &self.static_values);
             crate::inject_style(style_id, &rendered);
         }
-        dom.set_attribute(silex_dom::attribute::AttributeRequest::new(
+        dom.set_attribute(AttributeRequest::new(
             element,
-            silex_dom::attribute::AttributeTarget::Class,
-            silex_dom::attribute::AttributeValue::ClassTokens {
+            AttributeTarget::Class,
+            AttributeValue::ClassTokens {
                 add: vec![self.class_name.to_string()],
                 remove: Vec::new(),
             },
-        ))
-        .map_err(|error| SilexError::fatal(SilexErrorKind::Dom(error.to_string())))?;
+        ))?;
 
         if !self.vars.is_empty() {
             let vars = self.vars.clone();
@@ -442,11 +444,11 @@ impl<'scope> ViewApplyToDom<'scope> for DynamicCss<'scope> {
                             .and_then(|values| values.get(index))
                             .and_then(Option::as_deref);
                         if old_value != Some(value.as_str()) {
-                            dom_for_effect
-                                .set_style_property(&element_for_effect, name, Some(value))
-                                .map_err(|error| {
-                                    SilexError::fatal(SilexErrorKind::Dom(error.to_string()))
-                                })?;
+                            dom_for_effect.set_style_property(
+                                &element_for_effect,
+                                name,
+                                Some(value),
+                            )?;
                         }
                     }
                     Ok(values.into_iter().map(Some).collect())
@@ -460,11 +462,7 @@ impl<'scope> ViewApplyToDom<'scope> for DynamicCss<'scope> {
             owner.on_cleanup(
                 Box::new(move || {
                     for name in names {
-                        dom_for_cleanup
-                            .set_style_property(&element_for_cleanup, name, None)
-                            .map_err(|error| {
-                                SilexError::fatal(SilexErrorKind::Dom(error.to_string()))
-                            })?;
+                        dom_for_cleanup.set_style_property(&element_for_cleanup, name, None)?;
                     }
                     Ok(())
                 }),
@@ -497,7 +495,7 @@ impl<'scope> ViewApplyToDom<'scope> for DynamicCss<'scope> {
                     let rule =
                         render_layered_selector(layer, parts, &next_class, &values, &static_values);
                     if !manager_for_effect.update(&next_class, &rule) {
-                        return Err(SilexError::fatal(SilexErrorKind::Dom(
+                        return Err(SilexError::fatal(SilexErrorKind::Framework(
                             "无法更新动态样式表".to_string(),
                         )));
                     }
@@ -859,7 +857,7 @@ fn update_view_styled_dynamic_rules(
             &rule.static_values,
         )?
         else {
-            return Err(SilexError::fatal(SilexErrorKind::Dom(
+            return Err(SilexError::fatal(SilexErrorKind::Framework(
                 "无法更新动态样式表".to_string(),
             )));
         };
@@ -1128,7 +1126,7 @@ pub fn inject_managed_dynamic_style_view<'scope>(
                     None => res,
                 };
                 if !manager_for_effect.update(&style_id_str, &res) {
-                    return Err(SilexError::fatal(SilexErrorKind::Dom(
+                    return Err(SilexError::fatal(SilexErrorKind::Framework(
                         "无法更新动态样式表".to_string(),
                     )));
                 }

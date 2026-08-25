@@ -60,10 +60,7 @@ struct DeferredFailure<'scope> {
 
 impl<'scope> View<'scope> for DeferredFailure<'scope> {
     fn mount(&self, context: &MountContext<'scope>) -> SilexResult<MountInstance<'scope>> {
-        let node = context
-            .dom()
-            .create_text("child")
-            .map_err(|error| SilexError::fatal(SilexErrorKind::Dom(error.to_string())))?;
+        let node = context.dom().create_text("child")?;
         context.target().append_node(&node)?;
         let node_for_cleanup = node.clone();
         let dom_for_cleanup = context.dom().clone();
@@ -71,14 +68,8 @@ impl<'scope> View<'scope> for DeferredFailure<'scope> {
         context.owner().on_cleanup(
             Box::new(move || {
                 cleanup_count.set(cleanup_count.get().saturating_add(1));
-                if dom_for_cleanup
-                    .parent(&node_for_cleanup)
-                    .map_err(|error| SilexError::fatal(SilexErrorKind::Dom(error.to_string())))?
-                    .is_some()
-                {
-                    dom_for_cleanup.remove(&node_for_cleanup).map_err(|error| {
-                        SilexError::fatal(SilexErrorKind::Dom(error.to_string()))
-                    })?;
+                if dom_for_cleanup.parent(&node_for_cleanup)?.is_some() {
+                    dom_for_cleanup.remove(&node_for_cleanup)?;
                 }
                 Ok(())
             }),
@@ -170,9 +161,7 @@ fn mount_view<'scope, V: View<'scope>>(
     error_handler: &ErrorHandlerToken<'scope>,
 ) -> SilexResult<MountInstance<'scope>> {
     let browser = BrowserDom::new(document());
-    let parent = browser
-        .from_web_sys_node(parent.clone())
-        .map_err(|error| SilexError::fatal(SilexErrorKind::Dom(error.to_string())))?;
+    let parent = browser.from_web_sys_node(parent.clone())?;
     let context = MountContext::for_parent(
         browser.context(),
         parent,

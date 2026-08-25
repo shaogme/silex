@@ -7,7 +7,7 @@ use silex_view::element::Element;
 use silex_view::event;
 use silex_view::{AnyView, MountedApp, RenderOnlyKeyedListView};
 use std::rc::Rc;
-use std::{cell::Cell, marker::PhantomData};
+use std::{cell::Cell, cell::RefCell, marker::PhantomData};
 
 fn app(dom: &SsrDom) -> MountedApp {
     let host = dom.document().expect("SSR document").node().clone();
@@ -58,9 +58,12 @@ fn failed_builder_rolls_back_staging_and_remains_retryable() {
             let handler = context.access().error_handler(|_| {}).expect("handler");
             let node_ref = context.owner().node_ref();
             context.mount_unit(
-                Element::with_child("div", "temporary").node_ref(node_ref.clone()),
+                Element::with_child("div", "temporary")
+                    .node_ref(node_ref.clone())
+                    .on(event::click, || Ok(())),
                 handler.view(),
             )?;
+            assert_eq!(dom.event_records().len(), 1);
             assert!(
                 node_ref
                     .get()
@@ -86,9 +89,14 @@ fn failed_builder_rolls_back_staging_and_remains_retryable() {
         })
         .expect_err("builder should fail");
 
-    assert!(error.can_retry());
+    assert!(matches!(
+        error.kind(),
+        SilexErrorKind::View(view)
+            if view.mount_error().is_some_and(|error| error.can_retry())
+    ));
     assert!(!mounted.is_poisoned());
     assert!(cleared_for_assertion.get());
+    assert!(dom.event_records().is_empty());
     assert_eq!(dom.serialize(Default::default()).expect("serialize"), "");
 }
 
@@ -112,7 +120,101 @@ fn ssr_listener_is_recorded_and_owner_cleanup_is_idempotent() {
     assert!(!html.contains("click"));
     mounted.dispose().expect("first dispose");
     mounted.dispose().expect("second dispose");
+    assert!(dom.event_records().is_empty());
     assert_eq!(dom.serialize(Default::default()).expect("serialize"), "");
+}
+
+#[test]
+fn owner_cleanup_orders_binding_event_lease_and_dom_removal() {
+    let dom = Rc::new(SsrDom::new());
+    let mut mounted = app(dom.as_ref());
+    let observed = Rc::new(RefCell::new(None));
+    let observed_for_assertion = observed.clone();
+    let raw_node = Rc::new(RefCell::new(None));
+    mounted
+        .mount(|context| {
+            let handler = context.access().error_handler(|_| {}).expect("handler");
+            let node_ref = context.owner().node_ref();
+            let node_for_observer = node_ref.clone();
+            let node_ref_for_snapshot = node_ref.clone();
+            let dom_for_observer = context.dom().clone();
+            let ssr_for_observer = dom.clone();
+            let raw_node_for_observer = raw_node.clone();
+            let observed_for_cleanup = observed.clone();
+            context.owner().on_cleanup(
+                Box::new(move || {
+                    let node = raw_node_for_observer
+                        .borrow()
+                        .clone()
+                        .expect("observer should retain the old node handle");
+                    let snapshot = (
+                        node_for_observer
+                            .get()
+                            .expect("node ref should be readable")
+                            .is_none(),
+                        ssr_for_observer.event_records().is_empty(),
+                        dom_for_observer
+                            .parent(&node)
+                            .expect("parent lookup should succeed")
+                            .is_none(),
+                    );
+                    *observed_for_cleanup.borrow_mut() = Some(snapshot);
+                    Ok(())
+                }),
+                handler.view(),
+            )?;
+            context.mount_unit(
+                Element::with_child("button", "go")
+                    .node_ref(node_ref)
+                    .on(event::click, || Ok(())),
+                handler.view(),
+            )?;
+            *raw_node.borrow_mut() = node_ref_for_snapshot
+                .get()
+                .expect("node ref should be readable");
+            Ok(())
+        })
+        .expect("mount should succeed");
+    mounted.dispose().expect("dispose should succeed");
+    let snapshot = observed_for_assertion
+        .borrow()
+        .clone()
+        .expect("cleanup should record the order");
+    assert!(
+        snapshot.0,
+        "NodeRef binding must clear before parent cleanup"
+    );
+    assert!(
+        snapshot.1,
+        "SSR event lease must be cancelled before parent cleanup"
+    );
+    assert!(
+        snapshot.2,
+        "DOM removal must complete before the root observer"
+    );
+}
+
+#[test]
+fn poisoned_mount_does_not_leave_ssr_event_records() {
+    let dom = SsrDom::new();
+    let mut mounted = app(&dom);
+    let error = mounted
+        .mount(|context| {
+            let handler = context.access().error_handler(|_| {}).expect("handler");
+            context.mount_unit(
+                Element::with_child("button", "panic").on(event::click, || Ok(())),
+                handler.view(),
+            )?;
+            panic!("intentional poison");
+        })
+        .expect_err("panic should poison the app");
+    assert!(matches!(
+        error.kind(),
+        SilexErrorKind::View(view)
+            if view.mount_error().is_some_and(|error| error.is_poisoned())
+    ));
+    assert!(mounted.is_poisoned());
+    assert!(dom.event_records().is_empty());
 }
 
 #[test]

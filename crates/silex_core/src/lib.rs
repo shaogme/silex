@@ -13,9 +13,13 @@ pub mod traits;
 pub use callback::Callback;
 pub use context::{SilexContext, SilexContextProvider};
 pub use error::{
-    ErrorHandler, ErrorHandlerAnchor, ErrorHandlerInput, ErrorHandlerToken, ErrorReporter,
-    ErrorSeverity, HandlerLease, SilexError, SilexErrorKind, SilexResult,
+    AppHostError, BootstrapError, CleanupOrigin, DisposeError, DomError, DomResult, ErrorHandler,
+    ErrorHandlerAnchor, ErrorHandlerInput, ErrorHandlerToken, ErrorReporter, ErrorSeverity,
+    HandlerLease, HostState, MountAvailability, MountError, RollbackError, SilexError,
+    SilexErrorKind, SilexResult, UnmountOutcome, ViewError,
 };
+
+pub use error::{CleanupFailure as DomCleanupFailure, CleanupReport as DomCleanupReport};
 
 #[cfg(feature = "error-persistence")]
 pub use error::{PersistenceError, PersistenceErrorKind};

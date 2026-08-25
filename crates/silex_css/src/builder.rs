@@ -9,11 +9,11 @@ use crate::{
         },
     },
 };
-use silex_core::{
-    EffectPhase, ErrorReporter, Rx, RxGet, SilexContextProvider, SilexError, SilexErrorKind,
-    SilexResult,
+use silex_core::{EffectPhase, ErrorReporter, Rx, RxGet, SilexContextProvider, SilexResult};
+use silex_dom::{
+    DomElement,
+    attribute::{AttributeRequest, AttributeTarget, AttributeValue},
 };
-use silex_dom::DomElement;
 use silex_hash::{
     css::{CssHasher, Normalized, encode_base36},
     css_hasher,
@@ -458,17 +458,14 @@ impl<'scope> ViewApplyToDom<'scope> for Style<'scope> {
         if !css.is_empty() {
             inject_style(&class_base, &css);
         }
-        context
-            .dom()
-            .set_attribute(silex_dom::attribute::AttributeRequest::new(
-                element,
-                silex_dom::attribute::AttributeTarget::Class,
-                silex_dom::attribute::AttributeValue::ClassTokens {
-                    add: vec![class_base.clone()],
-                    remove: Vec::new(),
-                },
-            ))
-            .map_err(|error| SilexError::fatal(SilexErrorKind::Dom(error.to_string())))?;
+        context.dom().set_attribute(AttributeRequest::new(
+            element,
+            AttributeTarget::Class,
+            AttributeValue::ClassTokens {
+                add: vec![class_base.clone()],
+                remove: Vec::new(),
+            },
+        ))?;
 
         let property_names: Vec<String> =
             dyn_bindings.iter().map(|(name, _)| name.clone()).collect();
@@ -489,10 +486,7 @@ impl<'scope> ViewApplyToDom<'scope> for Style<'scope> {
                             .and_then(|values| values.get(index))
                             .and_then(Option::as_deref);
                         if old_value != Some(value.as_str()) {
-                            dom.set_style_property(&element_for_effect, name, Some(value))
-                                .map_err(|error| {
-                                    SilexError::fatal(SilexErrorKind::Dom(error.to_string()))
-                                })?;
+                            dom.set_style_property(&element_for_effect, name, Some(value))?;
                         }
                     }
                     Ok(values.into_iter().map(Some).collect())
@@ -507,20 +501,17 @@ impl<'scope> ViewApplyToDom<'scope> for Style<'scope> {
         context.owner().on_cleanup(
             Box::new(move || {
                 for name in property_names {
-                    dom.set_style_property(&element_for_cleanup, &name, None)
-                        .map_err(|error| {
-                            SilexError::fatal(SilexErrorKind::Dom(error.to_string()))
-                        })?;
+                    dom.set_style_property(&element_for_cleanup, &name, None)?;
                 }
-                dom.set_attribute(silex_dom::attribute::AttributeRequest::new(
+                dom.set_attribute(AttributeRequest::new(
                     &element_for_cleanup,
-                    silex_dom::attribute::AttributeTarget::Class,
-                    silex_dom::attribute::AttributeValue::ClassTokens {
+                    AttributeTarget::Class,
+                    AttributeValue::ClassTokens {
                         add: Vec::new(),
                         remove: vec![class_name],
                     },
-                ))
-                .map_err(|error| SilexError::fatal(SilexErrorKind::Dom(error.to_string())))
+                ))?;
+                Ok(())
             }),
             context.error_handler(),
         )

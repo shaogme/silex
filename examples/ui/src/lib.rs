@@ -1,4 +1,4 @@
-use silex::bootstrap::{BootstrapError, BrowserBootstrap, JsAppHost};
+use silex::bootstrap::{BrowserBootstrap, JsAppHost};
 use silex::dom::CleanupSink;
 use silex::prelude::*;
 use silex::reexports::*;
@@ -600,7 +600,7 @@ fn App<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'scope> {
 }
 
 /// Mount the UI showcase into the conventional `#app` target.
-pub fn mount_ui() -> Result<JsAppHost, BootstrapError> {
+pub fn mount_ui() -> SilexResult<JsAppHost> {
     let mut bootstrap = BrowserBootstrap::from_id("app", CleanupSink::console())?;
     silex::ui::inject_shadcn_base_styles();
     bootstrap.mount(Runtime::new(), mount_ui_view)?;
@@ -608,7 +608,7 @@ pub fn mount_ui() -> Result<JsAppHost, BootstrapError> {
 }
 
 /// Mount the UI showcase into a caller-provided target node.
-pub fn mount_ui_into(target: web_sys::Node) -> Result<JsAppHost, BootstrapError> {
+pub fn mount_ui_into(target: web_sys::Node) -> SilexResult<JsAppHost> {
     let mut bootstrap = BrowserBootstrap::from_web_sys(target, CleanupSink::console())?;
     silex::ui::inject_shadcn_base_styles();
     bootstrap.mount(Runtime::new(), mount_ui_view)?;

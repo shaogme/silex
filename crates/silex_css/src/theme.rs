@@ -45,12 +45,10 @@ fn apply_var_diff(
     for write in var_writes(entries, prev) {
         match write {
             VarWrite::Set(name, value) => {
-                dom.set_style_property(element, name, Some(value))
-                    .map_err(|error| SilexError::fatal(SilexErrorKind::Dom(error.to_string())))?;
+                dom.set_style_property(element, name, Some(value))?;
             }
             VarWrite::Remove(name) => {
-                dom.set_style_property(element, name, None)
-                    .map_err(|error| SilexError::fatal(SilexErrorKind::Dom(error.to_string())))?;
+                dom.set_style_property(element, name, None)?;
             }
         }
     }
@@ -158,11 +156,7 @@ where
         owner.on_cleanup(
             Box::new(move || {
                 for name in &names {
-                    dom_for_cleanup
-                        .set_style_property(&element_for_cleanup, name, None)
-                        .map_err(|error| {
-                            SilexError::fatal(SilexErrorKind::Dom(error.to_string()))
-                        })?;
+                    dom_for_cleanup.set_style_property(&element_for_cleanup, name, None)?;
                 }
                 Ok(())
             }),
@@ -214,7 +208,7 @@ where
                 if previous.map(String::as_str) != Some(css.as_str())
                     && !manager_for_effect.update(&style_id, &css)
                 {
-                    return Err(SilexError::fatal(SilexErrorKind::Dom(
+                    return Err(SilexError::fatal(SilexErrorKind::Framework(
                         "无法更新全局主题样式表".to_string(),
                     )));
                 }
@@ -319,11 +313,7 @@ where
             Box::new(move || {
                 let names = names_for_cleanup.take_for_cleanup().unwrap_or_default();
                 for name in &names {
-                    dom_for_cleanup
-                        .set_style_property(&element_for_cleanup, name, None)
-                        .map_err(|error| {
-                            SilexError::fatal(SilexErrorKind::Dom(error.to_string()))
-                        })?;
+                    dom_for_cleanup.set_style_property(&element_for_cleanup, name, None)?;
                 }
                 Ok(())
             }),

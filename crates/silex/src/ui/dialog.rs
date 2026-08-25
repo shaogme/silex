@@ -1,5 +1,5 @@
 use crate::components::{Portal, PortalHostAttrs};
-use silex_core::prelude::*;
+use silex_core::{RxReadRef, prelude::*};
 use silex_html::{button, div};
 use silex_macros::{component, styled, tw};
 use silex_view::prelude::*;
@@ -39,18 +39,14 @@ fn dialog_focus_binding<'scope>(
             EffectPhase::PostFlush,
             Box::new(move || -> SilexResult<()> {
                 if open.with(|value| *value)? {
-                    if silex_core::RxReadRef::with(&previous_focus, |value| value.is_none())? {
+                    if RxReadRef::with(&previous_focus, |value| value.is_none())? {
                         previous_focus.set(dom.active_element().ok().flatten())?;
                     }
-                    dom.focus(&dialog).map_err(|error| {
-                        SilexError::fatal(SilexErrorKind::Dom(error.to_string()))
-                    })?;
+                    dom.focus(&dialog)?;
                 } else if let Some(previous) =
-                    silex_core::RxReadRef::with(&previous_focus, |value| value.clone())?
+                    RxReadRef::with(&previous_focus, |value| value.clone())?
                 {
-                    dom.focus(&previous).map_err(|error| {
-                        SilexError::fatal(SilexErrorKind::Dom(error.to_string()))
-                    })?;
+                    dom.focus(&previous)?;
                     previous_focus.set(None)?;
                 }
                 Ok(())

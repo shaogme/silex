@@ -15,9 +15,9 @@ error[E0599]: no method named `value` found for struct `InvalidDivBuilder<'owner
    = help: items from traits can only be used if the trait is implemented and in scope
    = note: the following trait defines an item `value`, perhaps you need to implement it:
            candidate #1: `FormAttributes`
-help: there is a method `data_value` with a similar name
+help: there is a method `bind_value` with a similar name
    |
-42 |         let _ = InvalidDiv(ctx, AnyView::Empty).data_value("invalid");
+42 |         let _ = InvalidDiv(ctx, AnyView::Empty).bind_value("invalid");
    |                                                 +++++
 
 error[E0599]: no method named `href` found for struct `InvalidSpanBuilder<'owner, Ctx>` in the current scope

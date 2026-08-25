@@ -185,10 +185,7 @@ impl<'scope> Element<'scope> {
     }
 
     fn mount_inner(&self, context: &MountContext<'scope>) -> SilexResult<MountInstance<'scope>> {
-        let dom_element = context
-            .dom()
-            .create_element(self.spec())
-            .map_err(crate::error::dom_error)?;
+        let dom_element = context.dom().create_element(self.spec())?;
         let parent_owner = context.owner();
         let provisional_owner = parent_owner.child();
         let token = provisional_owner.clone();
@@ -217,14 +214,8 @@ impl<'scope> Element<'scope> {
                     owner_for_cleanup
                         .close()
                         .map_err(|error| SilexError::fatal(SilexErrorKind::Close(error)))?;
-                    if cleanup_dom
-                        .parent(&element_for_cleanup)
-                        .map_err(crate::error::dom_error)?
-                        .is_some()
-                    {
-                        cleanup_dom
-                            .remove(&element_for_cleanup)
-                            .map_err(crate::error::dom_error)?;
+                    if cleanup_dom.parent(&element_for_cleanup)?.is_some() {
+                        cleanup_dom.remove(&element_for_cleanup)?;
                     }
                     Ok(())
                 }),

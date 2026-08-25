@@ -5,12 +5,12 @@ use silex_core::{Runtime, SilexError, SilexResult};
 use silex_dom::CleanupSink;
 use silex_view::{Element, MountBuilderContext};
 use wasm_bindgen_test::*;
-use web_sys::Node;
+use web_sys::{Document, Node, window};
 
 wasm_bindgen_test_configure!(run_in_browser);
 
-fn document() -> web_sys::Document {
-    web_sys::window()
+fn document() -> Document {
+    window()
         .expect("window is available")
         .document()
         .expect("document is available")

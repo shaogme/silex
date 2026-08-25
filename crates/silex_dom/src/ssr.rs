@@ -92,6 +92,7 @@ impl NodeRecord {
 
 struct SsrState {
     next_id: NodeId,
+    next_event_id: u64,
     nodes: BTreeMap<NodeId, NodeRecord>,
     events: Vec<EventRecord>,
 }
@@ -102,6 +103,7 @@ impl SsrState {
         nodes.insert(0, NodeRecord::document());
         Self {
             next_id: 1,
+            next_event_id: 1,
             nodes,
             events: Vec::new(),
         }
@@ -116,14 +118,14 @@ pub struct SsrDom {
 
 struct SsrBackend {
     id: BackendId,
-    state: RefCell<SsrState>,
+    state: Rc<RefCell<SsrState>>,
 }
 
 impl SsrDom {
     pub fn new() -> Self {
         let backend = Rc::new(SsrBackend {
             id: BackendId::fresh(),
-            state: RefCell::new(SsrState::new()),
+            state: Rc::new(RefCell::new(SsrState::new())),
         });
         let erased: Rc<dyn DomBackend> = backend.clone();
         Self {
@@ -377,6 +379,11 @@ fn self_id_placeholder() -> u64 {
 impl DomBackend for SsrBackend {
     fn backend_id(&self) -> BackendId {
         self.id
+    }
+
+    fn check_node(&self, node: &DomNode) -> DomResult<()> {
+        let state = self.state.borrow();
+        self.validate_node(&state, node).map(|_| ())
     }
 
     fn document(&self) -> DomResult<DomDocument> {
@@ -673,13 +680,26 @@ impl DomBackend for SsrBackend {
         request.validate()?;
         let state = &mut *self.state.borrow_mut();
         let target = self.validate_node(state, request.target.node())?;
+        let id = state.next_event_id;
+        state.next_event_id = state
+            .next_event_id
+            .checked_add(1)
+            .ok_or(DomError::Backend {
+                operation: "listen",
+                message: String::from("event record id exhausted"),
+            })?;
         state.events.push(EventRecord {
+            id,
             target_backend: self.id.value(),
             target_identity: request.target.node().identity(),
             target_kind: self.record(state, target)?.kind.label(),
             spec: request.spec.clone(),
         });
-        Ok(HostResource::inert())
+        let events = Rc::clone(&self.state);
+        Ok(HostResource::with_cancel(move || {
+            events.borrow_mut().events.retain(|record| record.id != id);
+            Ok(())
+        }))
     }
 }
 
@@ -783,12 +803,14 @@ fn escape_comment(value: &str, output: &mut String) {
 mod tests {
     use super::{SerializeOptions, SsrDom};
     use crate::{
+        DomError,
         attribute::{
             AttributeRequest, AttributeTarget, AttributeValue, PropertyRequest, PropertyValue,
         },
-        event::{EventKind, EventSpec, PhysicalEventRequest},
+        event::{DomEventBridge, EventKind, EventSpec, PhysicalEventRequest},
         tree::{ElementSpec, InsertRequest, Namespace, RangeRequest},
     };
+    use std::{cell::Cell, rc::Rc};
 
     #[test]
     fn ssr_tree_serializes_deterministically_and_escapes_values() {
@@ -932,7 +954,7 @@ mod tests {
             .context()
             .append(first_document.node(), &second_text)
             .expect_err("cross context append should fail");
-        assert!(matches!(error, crate::DomError::CrossContext { .. }));
+        assert!(matches!(error, DomError::CrossContext { .. }));
 
         let detached = first
             .context()
@@ -940,7 +962,7 @@ mod tests {
             .expect("text should exist");
         assert!(matches!(
             first.context().remove(&detached),
-            Err(crate::DomError::NoParent)
+            Err(DomError::NoParent)
         ));
     }
 
@@ -971,20 +993,75 @@ mod tests {
     }
 
     #[test]
-    fn ssr_listener_is_recorded_but_inert() {
+    fn ssr_listener_lease_is_recorded_and_retractable() {
         let dom = SsrDom::new();
         let context = dom.context();
         let element = context
             .create_element(ElementSpec::new("button"))
             .expect("button should exist");
+        let callback_calls = Rc::new(Cell::new(0));
+        let callback_calls_for_bridge = callback_calls.clone();
+        let bridge: Rc<dyn DomEventBridge> = Rc::new(move |_| {
+            callback_calls_for_bridge.set(callback_calls_for_bridge.get() + 1);
+            Ok(())
+        });
         let resource = context
-            .listen(PhysicalEventRequest::new(
-                &element,
-                EventSpec::new("click", EventKind::Mouse),
-            ))
-            .expect("SSR listener should be inert");
-        assert!(!resource.is_active());
-        assert_eq!(dom.event_records().len(), 1);
+            .listen(
+                PhysicalEventRequest::new(&element, EventSpec::new("click", EventKind::Mouse))
+                    .with_bridge(bridge),
+            )
+            .expect("SSR listener should create a lease");
+        assert!(resource.is_active());
+        assert_eq!(callback_calls.get(), 0);
+        let record = dom.event_records().pop().expect("event record");
+        assert!(record.id > 0);
+        resource.cancel().expect("SSR lease should be cancellable");
+        resource
+            .cancel()
+            .expect("repeated SSR lease cancellation should be inert");
+        assert_eq!(dom.event_records().len(), 0);
+    }
+
+    #[test]
+    fn ssr_capability_matrix_is_explicit_and_safe() {
+        let dom = SsrDom::new();
+        let context = dom.context();
+        let document = context.document().expect("document");
+        let element = context
+            .create_element(ElementSpec::new("button"))
+            .expect("element");
+        let text = context.create_text("text").expect("text");
+        let fragment = context.create_fragment().expect("fragment");
+
+        assert!(matches!(
+            context.element(document.node()),
+            Err(DomError::WrongNodeKind { .. })
+        ));
+        assert!(matches!(
+            context.element(&text),
+            Err(DomError::WrongNodeKind { .. })
+        ));
+        assert!(matches!(
+            context.element(&fragment),
+            Err(DomError::WrongNodeKind { .. })
+        ));
+        assert_eq!(
+            context.set_text(element.node(), "wrong kind"),
+            Err(DomError::WrongNodeKind {
+                expected: "text",
+                actual: "element",
+            })
+        );
+        assert_eq!(
+            context.append(&text, element.node()),
+            Err(DomError::CannotContain { parent: "text" })
+        );
+        assert_eq!(
+            context.focus(&element),
+            Err(DomError::Unsupported {
+                capability: "focus"
+            })
+        );
     }
 
     #[test]
@@ -1060,7 +1137,7 @@ mod tests {
         let error = range
             .move_before(parent.node(), &first_start)
             .expect_err("a range cannot move before a reference inside itself");
-        assert_eq!(error, crate::DomError::ParentMismatch);
+        assert_eq!(error, DomError::ParentMismatch);
         assert_eq!(
             context.children(parent.node()).expect("children"),
             children_before_failed_move

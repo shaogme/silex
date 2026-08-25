@@ -1,7 +1,9 @@
 use crate::css::AppTheme;
 use gloo_timers::future::TimeoutFuture;
 use silex::core::TaskHandle;
+use silex::dom::DomError;
 use silex::{dom::log::console_log, prelude::*};
+use std::rc::Rc;
 
 #[component]
 pub fn Greeting<'scope, Ctx>(
@@ -267,29 +269,77 @@ pub fn SignalGuardDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
     ))
 }
 
+fn focus_status(error: &SilexError) -> String {
+    match error.kind() {
+        SilexErrorKind::Dom(DomError::Unsupported {
+            capability: "focus",
+        }) => "NodeRef focus unsupported on this backend".to_string(),
+        SilexErrorKind::Dom(DomError::NotBound) => {
+            "NodeRef focus unavailable: ref is not bound".to_string()
+        }
+        SilexErrorKind::Dom(DomError::Detached { .. }) => {
+            "NodeRef focus failed: target is detached".to_string()
+        }
+        _ => format!("NodeRef focus failed: {error}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::focus_status;
+    use silex::{SilexError, dom::DomError};
+
+    #[test]
+    fn focus_status_preserves_capability_failure_categories() {
+        assert_eq!(
+            focus_status(&SilexError::from(DomError::Unsupported {
+                capability: "focus",
+            })),
+            "NodeRef focus unsupported on this backend"
+        );
+        assert_eq!(
+            focus_status(&SilexError::from(DomError::NotBound)),
+            "NodeRef focus unavailable: ref is not bound"
+        );
+        assert_eq!(
+            focus_status(&SilexError::from(DomError::Detached { kind: "element" })),
+            "NodeRef focus failed: target is detached"
+        );
+    }
+}
+
 #[component]
-pub fn NodeRefDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
+pub fn NodeRefDemo<'scope, Ctx>(
+    #[ctx] ctx: Ctx,
+    dom_action: MountDomAction<'scope>,
+    cleanup_hook: Rc<dyn Fn(bool) + 'scope>,
+) -> impl View<'scope> {
     let input_ref = MountOwnerToken::new(owner).node_ref();
-    let ref_status = owner.signal("Input ref has not been checked".to_string())?;
+    let cleanup_ref = input_ref.clone();
+    owner.on_cleanup(
+        Box::new(move || {
+            let is_cleared = cleanup_ref.get().map(|node| node.is_none())?;
+            cleanup_hook(is_cleared);
+            Ok(())
+        }),
+        error_handler,
+    )?;
+    let ref_status = owner.signal("NodeRef focus is ready".to_string())?;
+    let focus_action = dom_action.clone();
 
     Ok(div![
         h3("NodeRef Demo"),
-        p("The input is tracked through a backend-neutral NodeRef."),
+        p("Click the button to focus this input through a backend-neutral NodeRef."),
         input()
-            .placeholder("I will be focused...")
+            .placeholder("I will be focused by NodeRef")
             .node_ref(input_ref.clone())
             .style(sty(ctx).margin_right(px(10))?.padding("5px")?),
-        button("Check Input Ref").on(event::click, move |_| {
-            let has_input_ref = input_ref
-                .get()
-                .map_err(|error| SilexError::fatal(SilexErrorKind::Dom(error.to_string())))?
-                .is_some();
-            let message = if has_input_ref {
-                "Input ref is available"
-            } else {
-                "Input ref is empty"
+        button("Focus Input via NodeRef").on(event::click, move |_| {
+            let message = match focus_action.focus(&input_ref) {
+                Ok(()) => "NodeRef focus succeeded".to_string(),
+                Err(error) => focus_status(&error),
             };
-            ref_status.set(message.to_string())?;
+            ref_status.set(message)?;
             Ok(())
         }),
         p(ref_status)
@@ -440,7 +490,11 @@ pub fn EventDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
 }
 
 #[component]
-pub fn BasicsPage<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
+pub fn BasicsPage<'scope, Ctx>(
+    #[ctx] ctx: Ctx,
+    dom_action: MountDomAction<'scope>,
+    cleanup_hook: Rc<dyn Fn(bool) + 'scope>,
+) -> impl View<'scope> {
     let name_signal = owner.signal("Developer".to_string())?;
     let name_draft = owner.signal("Developer".to_string())?;
 
@@ -469,7 +523,7 @@ pub fn BasicsPage<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
         Counter(ctx).build(),
         SignalGuardDemo(ctx).build(),
         EventDemo(ctx).build(),
-        NodeRefDemo(ctx).build(),
+        NodeRefDemo(ctx, dom_action, cleanup_hook).build(),
         SvgIconDemo(ctx).build(),
         // AttributeDemo omitted for brevity, logic is same as previous
     ])

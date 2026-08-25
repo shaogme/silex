@@ -1,0 +1,7 @@
+error: lifetime may not live long enough
+ --> tests/ui/fail_node_ref_scope_escape.rs:4:5
+  |
+3 | fn escape<'scope>(reference: NodeRef<'scope>) -> NodeRef<'static> {
+  |           ------ lifetime `'scope` defined here
+4 |     reference
+  |     ^^^^^^^^^ returning this value requires that `'scope` must outlive `'static`

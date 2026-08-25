@@ -31,7 +31,7 @@ impl NetConnectionState {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum NetErrorKind {
     BrowserUnavailable,
     TransportUnavailable,
@@ -47,7 +47,7 @@ pub enum NetErrorKind {
     Core(Box<SilexErrorKind>),
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum NetError {
     Recoverable(NetErrorKind),
     Fatal(NetErrorKind),

@@ -79,6 +79,27 @@ SSR serialization 确定性转义文本/attribute/style，property 不进入 mar
 保留目标 identity 和 `EventSpec`。`GlobalEventAttributes::node_ref` 在
 mount 期间保存抽象节点，rollback/dispose 后清空。
 
+### NodeRef 能力入口
+
+`silex_dom::node_ref::NodeRef<'scope>` 只保存 backend-neutral 的 opaque
+`DomNode`。`Some` 只表示当前存在逻辑 binding，不代表节点属于调用者选择的
+backend、仍连接在 document 中或一定可以执行某项能力。需要 DOM 能力时必须使用
+显式的 context：
+
+```rust
+let action = context.dom_action();
+action.focus(&node_ref)?;
+let element = action.with_context(|dom| node_ref.resolve_element(dom))?;
+```
+
+`MountDomAction` 是 owner-bound 的 mount/event callback 入口。它内部检查 owner
+是否仍然 active，再把操作交给真实的 `DomContext`；不要把组件的
+`SilexContext`/`RouterContext` 当成 `DomContext`，也不要把 `web_sys` 类型放进
+组件或 facade 的公共参数。`focus` 成功只表示 backend 接受了该操作；未绑定、已
+清理、跨 context、错误 node kind、detached 或 backend 不支持时会返回错误，而不是
+把失败显示为成功。SSR 对 browser-only focus 返回 `Unsupported`，不会执行真实
+browser 操作。
+
 ## Feature
 
 | feature | 作用 |

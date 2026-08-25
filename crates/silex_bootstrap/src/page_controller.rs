@@ -1,5 +1,5 @@
 use crate::{AppHost, AppHostError, BootstrapError, HostState, UnmountOutcome};
-use silex_core::{Runtime, SilexError, SilexErrorKind, SilexResult};
+use silex_core::{DomError, Runtime, SilexError, SilexResult};
 use silex_dom::{
     CleanupSink, DomContext, DomNode,
     browser::BrowserDom,
@@ -11,7 +11,7 @@ use std::{
     cell::RefCell,
     rc::{Rc, Weak},
 };
-use web_sys::Node;
+use web_sys::{Node, window};
 
 /// Selects the browser events that can trigger an automatic page unmount.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -25,7 +25,7 @@ pub enum PageLifecyclePolicy {
 }
 
 /// Receives errors from an automatic lifecycle unmount.
-pub type LifecycleReporter = Rc<dyn Fn(BootstrapError) + 'static>;
+pub type LifecycleReporter = Rc<dyn Fn(SilexError) + 'static>;
 
 /// Owns an [`AppHost`] and optionally connects it to browser page lifecycle events.
 pub struct PageController {
@@ -36,14 +36,12 @@ pub struct PageController {
 
 impl PageController {
     /// Construct a controller through the explicit browser adapter.
-    pub fn from_web_sys(target: Node, cleanup_sink: CleanupSink) -> Result<Self, SilexError> {
-        let document = web_sys::window()
+    pub fn from_web_sys(target: Node, cleanup_sink: CleanupSink) -> SilexResult<Self> {
+        let document = window()
             .and_then(|window| window.document())
-            .ok_or_else(|| SilexError::fatal(SilexErrorKind::Dom("Document not found".into())))?;
+            .ok_or_else(|| SilexError::from(BootstrapError::TargetNotFound("document".into())))?;
         let browser = BrowserDom::new(document);
-        let target = browser
-            .from_web_sys_node(target)
-            .map_err(|error| SilexError::fatal(SilexErrorKind::Dom(error.to_string())))?;
+        let target = browser.from_web_sys_node(target)?;
         Ok(Self::new(browser.context(), target, cleanup_sink))
     }
 
@@ -61,7 +59,7 @@ impl PageController {
     }
 
     /// Mount one application through the underlying [`AppHost`].
-    pub fn mount<F>(&mut self, runtime: Runtime, builder: F) -> Result<(), BootstrapError>
+    pub fn mount<F>(&mut self, runtime: Runtime, builder: F) -> SilexResult<()>
     where
         F: for<'scope> FnOnce(&MountBuilderContext<'scope>) -> SilexResult<()>,
     {
@@ -70,12 +68,12 @@ impl PageController {
             .as_ref()
             .expect("page controller host is present")
             .try_borrow_mut()
-            .map_err(|_| BootstrapError::Host(AppHostError::ReentrantOperation))?;
-        host.mount(runtime, builder).map_err(BootstrapError::from)
+            .map_err(|_| SilexError::from(AppHostError::ReentrantOperation))?;
+        host.mount(runtime, builder)
     }
 
     /// Dispose the current application and mount a replacement through the underlying host.
-    pub fn replace<F>(&mut self, runtime: Runtime, builder: F) -> Result<(), BootstrapError>
+    pub fn replace<F>(&mut self, runtime: Runtime, builder: F) -> SilexResult<()>
     where
         F: for<'scope> FnOnce(&MountBuilderContext<'scope>) -> SilexResult<()>,
     {
@@ -84,19 +82,19 @@ impl PageController {
             .as_ref()
             .expect("page controller host is present")
             .try_borrow_mut()
-            .map_err(|_| BootstrapError::Host(AppHostError::ReentrantOperation))?;
-        host.replace(runtime, builder).map_err(BootstrapError::from)
+            .map_err(|_| SilexError::from(AppHostError::ReentrantOperation))?;
+        host.replace(runtime, builder)
     }
 
     /// Explicitly dispose the current application.
-    pub fn unmount(&mut self) -> Result<UnmountOutcome, BootstrapError> {
+    pub fn unmount(&mut self) -> SilexResult<UnmountOutcome> {
         let mut host = self
             .host
             .as_ref()
             .expect("page controller host is present")
             .try_borrow_mut()
-            .map_err(|_| BootstrapError::Host(AppHostError::ReentrantOperation))?;
-        host.unmount().map_err(BootstrapError::from)
+            .map_err(|_| SilexError::from(AppHostError::ReentrantOperation))?;
+        host.unmount()
     }
 
     /// Install the requested page lifecycle policy, replacing any existing policy.
@@ -104,7 +102,7 @@ impl PageController {
         &mut self,
         policy: PageLifecyclePolicy,
         reporter: LifecycleReporter,
-    ) -> Result<(), BootstrapError> {
+    ) -> SilexResult<()> {
         self.remove_page_lifecycle();
 
         let events = match policy {
@@ -135,11 +133,7 @@ impl PageController {
                     WindowEventRequest::new(EventSpec::new(event_name, EventKind::Custom))
                         .with_bridge(bridge),
                 )
-                .map_err(|error| {
-                    BootstrapError::Listener(SilexError::fatal(SilexErrorKind::Dom(
-                        error.to_string(),
-                    )))
-                })?;
+                .map_err(listener_error)?;
             listeners.push(listener);
         }
 
@@ -158,11 +152,7 @@ impl PageController {
             .as_ref()
             .expect("page controller host is present")
             .try_borrow()
-            .map_err(|_| {
-                SilexError::fatal(SilexErrorKind::Framework(
-                    "page controller host is already borrowed".to_string(),
-                ))
-            })?
+            .map_err(|_| SilexError::from(AppHostError::ReentrantOperation))?
             .is_active()
     }
 
@@ -185,19 +175,19 @@ impl PageController {
     }
 
     #[cfg(feature = "browser-bootstrap")]
-    pub(crate) fn into_app_host(mut self) -> Result<AppHost, BootstrapError> {
+    pub(crate) fn into_app_host(mut self) -> SilexResult<AppHost> {
         if !self.lifecycle_listeners.is_empty() {
-            return Err(BootstrapError::Lifecycle(
+            return Err(SilexError::from(BootstrapError::Lifecycle(
                 "page lifecycle listeners must be removed before host transfer".to_string(),
-            ));
+            )));
         }
 
         let host = self.host.take().expect("page controller host is present");
         match Rc::try_unwrap(host) {
             Ok(host) => Ok(host.into_inner()),
-            Err(_) => Err(BootstrapError::Lifecycle(
+            Err(_) => Err(SilexError::from(BootstrapError::Lifecycle(
                 "page controller host is still shared".to_string(),
-            )),
+            ))),
         }
     }
 }
@@ -208,16 +198,44 @@ impl Drop for PageController {
     }
 }
 
+fn listener_error(error: DomError) -> SilexError {
+    SilexError::from(BootstrapError::Listener(Box::new(SilexError::from(error))))
+}
+
 fn dispatch_lifecycle_unmount(host: &Weak<RefCell<AppHost>>, reporter: &LifecycleReporter) {
     let Some(host) = host.upgrade() else {
         return;
     };
 
     let result = match host.try_borrow_mut() {
-        Ok(mut host) => host.unmount().map(|_| ()).map_err(BootstrapError::from),
-        Err(_) => Err(BootstrapError::Host(AppHostError::ReentrantOperation)),
+        Ok(mut host) => host.unmount().map(|_| ()),
+        Err(_) => Err(SilexError::from(AppHostError::ReentrantOperation)),
     };
     if let Err(error) = result {
         reporter(error);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use silex_core::SilexErrorKind;
+
+    #[test]
+    fn listener_error_keeps_the_dom_payload_nested_in_bootstrap() {
+        let error = listener_error(DomError::Backend {
+            operation: "listen_window",
+            message: "window unavailable".to_string(),
+        });
+
+        assert!(matches!(
+            error.kind(),
+            SilexErrorKind::Bootstrap(bootstrap)
+                if matches!(bootstrap.as_ref(), BootstrapError::Listener(listener)
+                    if matches!(listener.kind(), SilexErrorKind::Dom(DomError::Backend {
+                        operation: "listen_window",
+                        message,
+                    }) if message == "window unavailable"))
+        ));
     }
 }

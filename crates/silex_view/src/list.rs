@@ -10,7 +10,7 @@ use silex_core::traits::{ForLoopSource, RxRead, RxReadRef};
 use silex_core::{
     CloseError, EffectPhase, ErrorHandlerToken, SilexError, SilexErrorKind, SilexResult,
 };
-use silex_dom::DomNode;
+use silex_dom::{DomError, DomNode};
 use std::{
     collections::{HashMap, HashSet},
     panic::{AssertUnwindSafe, catch_unwind},
@@ -368,11 +368,8 @@ where
             let old_state = state.order.clone();
             let parent = effect_context
                 .dom()
-                .parent(&end)
-                .map_err(crate::error::dom_error)?
-                .ok_or_else(|| {
-                    SilexError::fatal(SilexErrorKind::Dom("keyed range has no parent".into()))
-                })?;
+                .parent(&end)?
+                .ok_or_else(|| SilexError::from(DomError::NoParent))?;
             let mut updated = Vec::new();
             let mut pending = HashMap::new();
             let result = catch_unwind(AssertUnwindSafe(|| -> SilexResult<()> {

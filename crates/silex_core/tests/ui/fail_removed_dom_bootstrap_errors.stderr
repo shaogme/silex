@@ -1,9 +1,0 @@
-error[E0432]: unresolved imports `silex_core::AppHostError`, `silex_core::BootstrapError`, `silex_core::CleanupReport`, `silex_core::MountError`
- --> tests/ui/fail_removed_dom_bootstrap_errors.rs:1:18
-  |
-1 | use silex_core::{AppHostError, BootstrapError, CleanupReport, MountError};
-  |                  ^^^^^^^^^^^^  ^^^^^^^^^^^^^^  ^^^^^^^^^^^^^  ^^^^^^^^^^ no `MountError` in the root
-  |                  |             |               |
-  |                  |             |               no `CleanupReport` in the root
-  |                  |             no `BootstrapError` in the root
-  |                  no `AppHostError` in the root

@@ -18,23 +18,14 @@ where
 {
     let owner = context.owner();
     let local_owner = owner.child();
-    let node = context
-        .dom()
-        .create_text("")
-        .map_err(crate::error::dom_error)?;
+    let node = context.dom().create_text("")?;
     context.target().append_node(&node)?;
     let node_for_cleanup = node.clone();
     let dom_for_cleanup = context.dom().clone();
     if let Err(error) = local_owner.on_cleanup(
         Box::new(move || {
-            if dom_for_cleanup
-                .parent(&node_for_cleanup)
-                .map_err(crate::error::dom_error)?
-                .is_some()
-            {
-                dom_for_cleanup
-                    .remove(&node_for_cleanup)
-                    .map_err(crate::error::dom_error)?;
+            if dom_for_cleanup.parent(&node_for_cleanup)?.is_some() {
+                dom_for_cleanup.remove(&node_for_cleanup)?;
             }
             Ok(())
         }),
@@ -55,7 +46,7 @@ where
             let value = rx.with(|value| value.to_string())?;
             dom_for_effect
                 .set_text(&node_for_effect, value)
-                .map_err(crate::error::dom_error)
+                .map_err(Into::into)
         }),
         context.error_handler(),
     ) {

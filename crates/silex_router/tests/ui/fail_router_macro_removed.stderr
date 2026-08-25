@@ -2,7 +2,9 @@ error[E0432]: unresolved import `silex_router::macros::routes`
  --> tests/ui/fail_router_macro_removed.rs:1:5
   |
 1 | use silex_router::macros::routes;
-  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `routes` in `macros`
+  |     ^^^^^^^^^^^^^^^^^^^^^^------
+  |                           |
+  |                           no `routes` in `macros`
   |
 help: a similar name exists in the module
   |

@@ -1,17 +1,17 @@
 #![cfg(target_arch = "wasm32")]
 
-use silex_bootstrap::{AppHost, AppHostError, HostState, UnmountOutcome};
-use silex_core::{Runtime, SilexError, SilexErrorKind, SilexResult};
+use silex_bootstrap::{AppHost, AppHostError, BootstrapError, HostState, UnmountOutcome};
+use silex_core::{Runtime, SilexError, SilexErrorKind, SilexResult, ViewError};
 use silex_dom::CleanupSink;
 use silex_view::{Element, MountBuilderContext};
 use std::{cell::Cell, rc::Rc};
 use wasm_bindgen_test::*;
-use web_sys::Node;
+use web_sys::{Document, Node, window};
 
 wasm_bindgen_test_configure!(run_in_browser);
 
-fn document() -> web_sys::Document {
-    web_sys::window()
+fn document() -> Document {
+    window()
         .expect("window is available")
         .document()
         .expect("document is available")
@@ -61,7 +61,12 @@ fn mount_rejects_active_app_and_unmount_is_idempotent() {
     let error = host
         .mount(Runtime::new(), |ctx| mount_text(ctx, "second"))
         .expect_err("active host must reject a second mount");
-    assert!(matches!(error, AppHostError::AlreadyMounted));
+    assert!(matches!(
+        error.kind(),
+        SilexErrorKind::Bootstrap(bootstrap)
+            if matches!(bootstrap.as_ref(), BootstrapError::Host(host)
+                if matches!(host.as_ref(), AppHostError::AlreadyMounted))
+    ));
     assert!(host.is_active().expect("host should report active state"));
     assert_eq!(target.text_content().as_deref(), Some("first"));
 
@@ -94,9 +99,10 @@ fn clean_mount_failure_returns_to_ready_and_preserves_primary_error() {
         })
         .expect_err("builder failure should be returned");
 
-    let mount_error = error
-        .mount_error()
-        .expect("mount error should be preserved");
+    let mount_error = match error.kind() {
+        SilexErrorKind::View(view) => view.mount_error().expect("mount error should be preserved"),
+        _ => panic!("expected a structured view mount error"),
+    };
     assert!(matches!(
         mount_error.primary(),
         SilexError::Recoverable(SilexErrorKind::Framework(message)) if message == "mount rejected"
@@ -132,15 +138,21 @@ fn non_clean_mount_rollback_poisoned_host() {
         })
         .expect_err("mount should fail");
 
-    let mount_error = error
-        .mount_error()
-        .expect("mount error should be preserved");
+    let mount_error = match error.kind() {
+        SilexErrorKind::View(view) => view.mount_error().expect("mount error should be preserved"),
+        _ => panic!("expected a structured view mount error"),
+    };
     assert!(!mount_error.rollback().is_clean());
     assert_eq!(host.state(), HostState::Poisoned);
     assert!(!host.is_active().expect("host should report active state"));
     assert!(matches!(
         host.mount(Runtime::new(), |ctx| mount_text(ctx, "blocked")),
-        Err(AppHostError::Poisoned)
+        Err(error) if matches!(
+            error.kind(),
+            SilexErrorKind::Bootstrap(bootstrap)
+                if matches!(bootstrap.as_ref(), BootstrapError::Host(host)
+                    if matches!(host.as_ref(), AppHostError::Poisoned))
+        )
     ));
 
     detach(&target);
@@ -202,7 +214,12 @@ fn replace_without_active_app_is_rejected() {
     let error = host
         .replace(Runtime::new(), |ctx| mount_text(ctx, "new"))
         .expect_err("replace requires an active app");
-    assert!(matches!(error, AppHostError::NotMounted));
+    assert!(matches!(
+        error.kind(),
+        SilexErrorKind::Bootstrap(bootstrap)
+            if matches!(bootstrap.as_ref(), BootstrapError::Host(host)
+                if matches!(host.as_ref(), AppHostError::NotMounted))
+    ));
     assert_eq!(host.state(), HostState::Ready);
 
     detach(&target);
@@ -234,7 +251,10 @@ fn failed_old_dispose_does_not_restore_or_replace_the_old_app() {
         })
         .expect_err("failed old disposal should reject replacement");
 
-    assert!(error.dispose_error().is_some());
+    assert!(matches!(
+        error.kind(),
+        SilexErrorKind::View(view) if matches!(view.as_ref(), ViewError::Dispose(_))
+    ));
     assert!(!replacement_called.get());
     assert_eq!(host.state(), HostState::Poisoned);
     assert!(!host.is_active().expect("host should report active state"));
@@ -258,7 +278,10 @@ fn failed_new_mount_leaves_replace_host_empty_and_ready() {
         })
         .expect_err("new mount failure should be returned");
 
-    assert!(error.mount_error().is_some());
+    assert!(matches!(
+        error.kind(),
+        SilexErrorKind::View(view) if matches!(view.as_ref(), ViewError::Mount(_))
+    ));
     assert_eq!(host.state(), HostState::Ready);
     assert!(!host.is_active().expect("host should report active state"));
     assert_eq!(target.child_nodes().length(), 0);
@@ -278,7 +301,10 @@ fn builder_panic_returns_structured_mount_error_and_poisoned_host() {
         })
         .expect_err("builder panic should become a structured mount error");
 
-    assert!(matches!(error, AppHostError::Mount(_)));
+    assert!(matches!(
+        error.kind(),
+        SilexErrorKind::View(view) if matches!(view.as_ref(), ViewError::Mount(_))
+    ));
     assert!(error.to_string().contains("builder panic"));
     assert_eq!(host.state(), HostState::Poisoned);
     assert!(!host.is_active().expect("host should report active state"));

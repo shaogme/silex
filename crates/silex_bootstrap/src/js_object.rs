@@ -1,7 +1,12 @@
 use crate::{AppHost, AppHostError, BootstrapError, HostState, UnmountOutcome};
 use js_sys::{Array, Object, Reflect};
-use silex_core::{CleanupDiagnostic, CleanupPayloadKind, CloseError, SilexError};
-use silex_dom::{CleanupFailure, CleanupOrigin, CleanupReport, log::console_error};
+use silex_core::{
+    CleanupDiagnostic, CleanupPayloadKind, CloseError, SilexError, SilexErrorKind, ViewError,
+};
+use silex_dom::{
+    error::{CleanupFailure as DomCleanupFailure, CleanupOrigin, CleanupReport},
+    log::console_error,
+};
 use std::{
     any::Any,
     panic::{AssertUnwindSafe, catch_unwind},
@@ -64,7 +69,7 @@ impl JsAppHost {
     pub fn is_active(&self) -> Result<bool, JsValue> {
         self.host()
             .is_active()
-            .map_err(|error| JsValue::from_str(&error.to_string()))
+            .map_err(|error| error_to_js_value(&error))
     }
 
     /// Return the stable lowercase host state used by the JavaScript API.
@@ -80,7 +85,7 @@ impl JsAppHost {
         let result = catch_unwind(AssertUnwindSafe(|| self.host_mut().unmount()));
         match result {
             Ok(Ok(UnmountOutcome::Disposed | UnmountOutcome::AlreadyUnmounted)) => Ok(()),
-            Ok(Err(error)) => Err(app_host_error_to_js(&error)?),
+            Ok(Err(error)) => Err(bootstrap_error_to_js(&error)?),
             Err(panic) => Err(panic_to_js("unmount", panic)?),
         }
     }
@@ -118,47 +123,93 @@ fn host_state_name(state: HostState) -> &'static str {
     }
 }
 
-/// Convert a bootstrap adapter failure into the stable JavaScript error object shape.
-pub fn bootstrap_error_to_js(error: &BootstrapError) -> Result<JsValue, JsValue> {
+/// Convert a unified error into the stable JavaScript error object shape.
+pub fn bootstrap_error_to_js(error: &SilexError) -> Result<JsValue, JsValue> {
+    silex_error_to_js(error)
+}
+
+fn append_bootstrap_payload(object: &Object, error: &BootstrapError) -> Result<(), JsValue> {
     match error {
-        BootstrapError::Host(error) => app_host_error_to_js(error),
-        BootstrapError::TargetNotFound(target) => simple_bootstrap_error_to_js(
-            "target-not-found",
-            &format!("bootstrap target not found: {target}"),
-            Some(("target", JsValue::from_str(target))),
-        ),
+        BootstrapError::Host(error) => app_host_error_to_js(object, error),
+        BootstrapError::TargetNotFound(target) => {
+            set_property(object, "code", JsValue::from_str("target-not-found"))?;
+            set_property(
+                object,
+                "message",
+                JsValue::from_str(&format!("bootstrap target not found: {target}")),
+            )?;
+            set_property(object, "primary", JsValue::UNDEFINED)?;
+            set_property(object, "rollback", JsValue::UNDEFINED)?;
+            set_property(object, "target", JsValue::from_str(target))
+        }
         BootstrapError::Lifecycle(message) => {
-            simple_bootstrap_error_to_js("lifecycle", message, None)
+            set_property(object, "code", JsValue::from_str("lifecycle"))?;
+            set_property(object, "message", JsValue::from_str(message))?;
+            set_property(object, "primary", JsValue::UNDEFINED)?;
+            set_property(object, "rollback", JsValue::UNDEFINED)
         }
         BootstrapError::Listener(error) => {
-            simple_bootstrap_error_to_js("listener", &error.to_string(), None)
+            set_property(object, "code", JsValue::from_str("listener"))?;
+            set_property(object, "message", JsValue::from_str(&error.to_string()))?;
+            set_property(object, "primary", silex_error_to_js(error)?)?;
+            set_property(object, "rollback", JsValue::UNDEFINED)
         }
     }
 }
 
-fn app_host_error_to_js(error: &AppHostError) -> Result<JsValue, JsValue> {
-    let object = Object::new();
+fn append_view_payload(object: &Object, error: &ViewError) -> Result<(), JsValue> {
+    match error {
+        ViewError::Mount(error) => {
+            set_property(object, "code", JsValue::from_str("mount"))?;
+            set_property(object, "message", JsValue::from_str(&error.to_string()))?;
+            set_property(object, "primary", silex_error_to_js(error.primary())?)?;
+            set_property(object, "rollback", cleanup_report_to_js(error.rollback())?)
+        }
+        ViewError::Dispose(error) => {
+            let report = cleanup_report_to_js(error.report())?;
+            set_property(object, "code", JsValue::from_str("dispose"))?;
+            set_property(object, "message", JsValue::from_str(&error.to_string()))?;
+            set_property(object, "primary", JsValue::UNDEFINED)?;
+            set_property(object, "rollback", report.clone())?;
+            set_property(object, "report", report)
+        }
+        ViewError::Rollback(error) => {
+            set_property(object, "code", JsValue::from_str("rollback"))?;
+            set_property(object, "message", JsValue::from_str(&error.to_string()))?;
+            set_property(object, "primary", silex_error_to_js(error.primary())?)?;
+            set_property(object, "rollback", cleanup_report_to_js(error.report())?)
+        }
+        ViewError::Invariant { message, .. } => {
+            set_property(object, "code", JsValue::from_str("invariant"))?;
+            set_property(object, "message", JsValue::from_str(message))?;
+            set_property(object, "primary", JsValue::UNDEFINED)?;
+            set_property(object, "rollback", JsValue::UNDEFINED)
+        }
+    }
+}
+
+fn app_host_error_to_js(object: &Object, error: &AppHostError) -> Result<(), JsValue> {
     set_property(
-        &object,
+        object,
         "code",
         JsValue::from_str(app_host_error_code(error)),
     )?;
-    set_property(&object, "message", JsValue::from_str(&error.to_string()))?;
-    set_property(&object, "primary", JsValue::UNDEFINED)?;
-    set_property(&object, "rollback", JsValue::UNDEFINED)?;
+    set_property(object, "message", JsValue::from_str(&error.to_string()))?;
+    set_property(object, "primary", JsValue::UNDEFINED)?;
+    set_property(object, "rollback", JsValue::UNDEFINED)?;
 
     match error {
         AppHostError::Mount(error) => {
-            set_property(&object, "primary", silex_error_to_js(error.primary())?)?;
-            set_property(&object, "rollback", cleanup_report_to_js(error.rollback())?)?;
+            set_property(object, "primary", silex_error_to_js(error.primary())?)?;
+            set_property(object, "rollback", cleanup_report_to_js(error.rollback())?)?;
         }
         AppHostError::Dispose(error) => {
             let report = cleanup_report_to_js(error.report())?;
-            set_property(&object, "rollback", report.clone())?;
-            set_property(&object, "report", report)?;
+            set_property(object, "rollback", report.clone())?;
+            set_property(object, "report", report)?;
         }
         AppHostError::InvalidState { state } => {
-            set_property(&object, "state", JsValue::from_str(host_state_name(*state)))?;
+            set_property(object, "state", JsValue::from_str(host_state_name(*state)))?;
         }
         AppHostError::AlreadyMounted
         | AppHostError::NotMounted
@@ -166,23 +217,7 @@ fn app_host_error_to_js(error: &AppHostError) -> Result<JsValue, JsValue> {
         | AppHostError::Poisoned => {}
     }
 
-    Ok(object.into())
-}
-
-fn simple_bootstrap_error_to_js(
-    code: &str,
-    message: &str,
-    extra: Option<(&str, JsValue)>,
-) -> Result<JsValue, JsValue> {
-    let object = Object::new();
-    set_property(&object, "code", JsValue::from_str(code))?;
-    set_property(&object, "message", JsValue::from_str(message))?;
-    set_property(&object, "primary", JsValue::UNDEFINED)?;
-    set_property(&object, "rollback", JsValue::UNDEFINED)?;
-    if let Some((name, value)) = extra {
-        set_property(&object, name, value)?;
-    }
-    Ok(object.into())
+    Ok(())
 }
 
 fn app_host_error_code(error: &AppHostError) -> &'static str {
@@ -216,7 +251,7 @@ fn cleanup_report_to_js(report: &CleanupReport) -> Result<JsValue, JsValue> {
     Ok(object.into())
 }
 
-fn cleanup_failure_to_js(failure: &CleanupFailure) -> Result<JsValue, JsValue> {
+fn cleanup_failure_to_js(failure: &DomCleanupFailure) -> Result<JsValue, JsValue> {
     let object = Object::new();
     set_property(
         &object,
@@ -251,7 +286,17 @@ fn silex_error_to_js(error: &SilexError) -> Result<JsValue, JsValue> {
     set_property(&object, "strategy", JsValue::from_str(strategy))?;
     set_property(&object, "kind", JsValue::from_str(kind.as_str()))?;
     set_property(&object, "message", JsValue::from_str(&error.to_string()))?;
+    if let SilexErrorKind::View(view_error) = kind {
+        append_view_payload(&object, view_error)?;
+    }
+    if let SilexErrorKind::Bootstrap(bootstrap_error) = kind {
+        append_bootstrap_payload(&object, bootstrap_error)?;
+    }
     Ok(object.into())
+}
+
+fn error_to_js_value(error: &SilexError) -> JsValue {
+    bootstrap_error_to_js(error).unwrap_or_else(|_| JsValue::from_str(&error.to_string()))
 }
 
 fn set_property(object: &Object, name: &str, value: JsValue) -> Result<(), JsValue> {
@@ -298,14 +343,15 @@ mod unwind_safety_tests {
 #[cfg(all(test, target_arch = "wasm32"))]
 mod tests {
     use super::*;
-    use silex_core::SilexErrorKind;
+    use silex_core::{DisposeError, DomError, MountError, SilexErrorKind};
+    use silex_dom::CleanupReport;
     use wasm_bindgen_test::*;
 
     wasm_bindgen_test_configure!(run_in_browser);
 
     #[wasm_bindgen_test]
     fn app_host_errors_are_structured_without_stringifying_reports() {
-        let error = app_host_error_to_js(&AppHostError::AlreadyMounted)
+        let error = bootstrap_error_to_js(&SilexError::from(AppHostError::AlreadyMounted))
             .expect("error object should be created");
         assert_eq!(
             Reflect::get(&error, &JsValue::from_str("code"))
@@ -330,7 +376,7 @@ mod tests {
 
     #[wasm_bindgen_test]
     fn silex_errors_keep_strategy_separate_from_kind_in_javascript() {
-        let fatal = silex_error_to_js(&SilexError::fatal(SilexErrorKind::Framework(
+        let fatal = bootstrap_error_to_js(&SilexError::fatal(SilexErrorKind::Framework(
             "fatal child failure".to_string(),
         )))
         .expect("fatal error object should be created");
@@ -349,9 +395,9 @@ mod tests {
             Some("framework")
         );
 
-        let recoverable = silex_error_to_js(&SilexError::recoverable(SilexErrorKind::Framework(
-            "recoverable child failure".to_string(),
-        )))
+        let recoverable = bootstrap_error_to_js(&SilexError::recoverable(
+            SilexErrorKind::Framework("recoverable child failure".to_string()),
+        ))
         .expect("recoverable error object should be created");
         assert_eq!(
             Reflect::get(&recoverable, &JsValue::from_str("strategy"))
@@ -366,6 +412,75 @@ mod tests {
                 .as_string()
                 .as_deref(),
             Some("framework")
+        );
+    }
+
+    #[wasm_bindgen_test]
+    fn bootstrap_view_payload_keeps_primary_and_rollback_schema() {
+        let mount = MountError::new(SilexError::fatal(DomError::NoParent), CleanupReport::new());
+        let error = SilexError::from(AppHostError::Mount(Box::new(mount)));
+        let object = bootstrap_error_to_js(&error).expect("error object should be created");
+
+        assert_eq!(
+            Reflect::get(&object, &JsValue::from_str("code"))
+                .expect("code property should exist")
+                .as_string()
+                .as_deref(),
+            Some("mount")
+        );
+        let primary = Reflect::get(&object, &JsValue::from_str("primary"))
+            .expect("primary property should exist");
+        assert_eq!(
+            Reflect::get(&primary, &JsValue::from_str("kind"))
+                .expect("primary kind should exist")
+                .as_string()
+                .as_deref(),
+            Some("dom")
+        );
+        let rollback = Reflect::get(&object, &JsValue::from_str("rollback"))
+            .expect("rollback property should exist");
+        assert!(
+            Reflect::get(&rollback, &JsValue::from_str("clean"))
+                .expect("rollback clean property should exist")
+                .as_bool()
+                .expect("rollback clean should be boolean")
+        );
+    }
+
+    #[wasm_bindgen_test]
+    fn listener_projection_keeps_nested_dom_error_kind() {
+        let listener = SilexError::from(BootstrapError::Listener(Box::new(SilexError::from(
+            DomError::NoParent,
+        ))));
+        let object = bootstrap_error_to_js(&listener).expect("error object should be created");
+        let primary = Reflect::get(&object, &JsValue::from_str("primary"))
+            .expect("listener primary should exist");
+
+        assert_eq!(
+            Reflect::get(&primary, &JsValue::from_str("kind"))
+                .expect("listener primary kind should exist")
+                .as_string()
+                .as_deref(),
+            Some("dom")
+        );
+    }
+
+    #[wasm_bindgen_test]
+    fn direct_view_dispose_projection_keeps_report_fields() {
+        let error = SilexError::from(DisposeError::new(CleanupReport::new()));
+        let object = bootstrap_error_to_js(&error).expect("error object should be created");
+
+        assert_eq!(
+            Reflect::get(&object, &JsValue::from_str("code"))
+                .expect("code property should exist")
+                .as_string()
+                .as_deref(),
+            Some("dispose")
+        );
+        assert!(
+            Reflect::get(&object, &JsValue::from_str("rollback"))
+                .expect("rollback property should exist")
+                .is_object()
         );
     }
 }

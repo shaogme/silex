@@ -1,4 +1,4 @@
-use silex::bootstrap::{BootstrapError, BrowserBootstrap, JsAppHost};
+use silex::bootstrap::{BrowserBootstrap, JsAppHost};
 use silex::dom::CleanupSink;
 use silex::prelude::*;
 use silex::reexports::*;
@@ -799,14 +799,14 @@ fn App<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'scope> {
 }
 
 /// Mount the Tailwind showcase into the conventional `#app` target.
-pub fn mount_tailwind() -> Result<JsAppHost, BootstrapError> {
+pub fn mount_tailwind() -> SilexResult<JsAppHost> {
     let mut bootstrap = BrowserBootstrap::from_id("app", CleanupSink::console())?;
     bootstrap.mount(Runtime::new(), mount_tailwind_view)?;
     bootstrap.into_js_host()
 }
 
 /// Mount the Tailwind showcase into a caller-provided target node.
-pub fn mount_tailwind_into(target: web_sys::Node) -> Result<JsAppHost, BootstrapError> {
+pub fn mount_tailwind_into(target: web_sys::Node) -> SilexResult<JsAppHost> {
     let mut bootstrap = BrowserBootstrap::from_web_sys(target, CleanupSink::console())?;
     bootstrap.mount(Runtime::new(), mount_tailwind_view)?;
     bootstrap.into_js_host()

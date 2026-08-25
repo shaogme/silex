@@ -9,7 +9,7 @@ use silex_dom::{DomContext, DomDocument, DomElement, DomNode};
 
 /// 从显式 DOM context 获取 document。
 pub fn document(context: &DomContext) -> SilexResult<DomDocument> {
-    context.document().map_err(crate::error::dom_error)
+    context.document().map_err(Into::into)
 }
 
 /// 返回 opaque event 的目标节点。

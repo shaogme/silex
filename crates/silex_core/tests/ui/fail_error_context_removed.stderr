@@ -2,4 +2,6 @@ error[E0432]: unresolved import `silex_core::ErrorContext`
  --> tests/ui/fail_error_context_removed.rs:1:5
   |
 1 | use silex_core::ErrorContext;
-  |     ^^^^^^^^^^^^^^^^^^^^^^^^ no `ErrorContext` in the root
+  |     ^^^^^^^^^^^^------------
+  |                 |
+  |                 no `ErrorContext` in the root

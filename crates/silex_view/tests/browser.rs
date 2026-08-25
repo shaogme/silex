@@ -5,10 +5,15 @@ use silex_core::reactivity::Signal;
 use silex_core::{Runtime, RxGet, SilexError, SilexErrorKind};
 use silex_dom::browser::BrowserDom;
 use silex_dom::error::CleanupSink;
-use silex_dom::{ElementSpec, RangeRequest};
+use silex_dom::event::{
+    DomEventBridge, EventKind, EventSpec, PhysicalEventRequest, WindowEventRequest,
+};
+use silex_dom::host::HostResourceState;
+use silex_dom::{DomError, ElementSpec, RangeRequest};
 use silex_view::attribute::{AttributeBuilder, GlobalAttributes, GlobalEventAttributes};
 use silex_view::dynamic::BranchEvaluation;
 use silex_view::element::Element;
+use silex_view::event::{Event as ViewEvent, bind_window_event};
 use silex_view::{
     AnyView, DomEvent, IndexedListView, MountedApp, RenderOnlyKeyedListView, StableBranch,
     StatefulKeyedListView,
@@ -20,7 +25,9 @@ use wasm_bindgen::JsCast;
 use wasm_bindgen::JsValue;
 use wasm_bindgen_futures::JsFuture;
 use wasm_bindgen_test::*;
-use web_sys::{Document, Element as RawElement, Event, HtmlInputElement, MouseEvent};
+use web_sys::{
+    Document, Element as RawElement, Event, HtmlIFrameElement, HtmlInputElement, MouseEvent,
+};
 
 wasm_bindgen_test_configure!(run_in_browser);
 
@@ -49,6 +56,173 @@ fn test_host(browser: &BrowserDom) -> (RawElement, silex_dom::DomNode) {
     (raw_host, host)
 }
 
+#[wasm_bindgen_test]
+fn browser_rejects_foreign_documents_and_cross_adapter_handles() {
+    let browser = BrowserDom::from_window().expect("browser DOM should be available");
+    let second_adapter = BrowserDom::new(document());
+    let document_handle = browser.document().expect("document handle");
+    assert!(matches!(
+        second_adapter.context().element(document_handle.node()),
+        Err(DomError::CrossContext { .. })
+    ));
+
+    let frame = document()
+        .create_element("iframe")
+        .expect("iframe should be creatable")
+        .dyn_into::<HtmlIFrameElement>()
+        .expect("iframe should have an HTML iframe interface");
+    document()
+        .body()
+        .expect("document body should exist")
+        .append_child(&frame)
+        .expect("iframe should attach");
+    let foreign_document = frame
+        .content_document()
+        .expect("iframe should expose a document");
+    let foreign_node: web_sys::Node = foreign_document
+        .create_element("div")
+        .expect("foreign element should be creatable")
+        .into();
+    assert!(matches!(
+        browser.from_web_sys_node(foreign_node),
+        Err(DomError::CrossContext { .. })
+    ));
+    document()
+        .body()
+        .expect("document body should exist")
+        .remove_child(&frame)
+        .expect("iframe should be removable");
+}
+
+#[wasm_bindgen_test]
+fn browser_focus_validates_attachment_and_node_kinds() {
+    let browser = BrowserDom::from_window().expect("browser DOM should be available");
+    let context = browser.context();
+    let detached = context
+        .create_element(ElementSpec::new("button"))
+        .expect("button should be creatable");
+    let text = context
+        .create_text("text")
+        .expect("text should be creatable");
+    let fragment = context
+        .create_fragment()
+        .expect("fragment should be creatable");
+    let document_handle = context.document().expect("document handle");
+
+    assert!(matches!(
+        context.focus(&detached),
+        Err(DomError::Detached { .. })
+    ));
+    assert!(matches!(
+        context.element(document_handle.node()),
+        Err(DomError::WrongNodeKind { .. })
+    ));
+    assert!(matches!(
+        context.element(&text),
+        Err(DomError::WrongNodeKind { .. })
+    ));
+    assert!(matches!(
+        context.element(&fragment),
+        Err(DomError::WrongNodeKind { .. })
+    ));
+
+    let body = context
+        .document_body()
+        .expect("document body capability should be available")
+        .expect("document body should exist");
+    context
+        .append(body.node(), detached.node())
+        .expect("button should attach");
+    context
+        .focus(&detached)
+        .expect("attached button should focus");
+    let active = context
+        .active_element()
+        .expect("active element should be queryable")
+        .expect("button should be active");
+    assert!(active.node().is_same_node(detached.node()));
+    context
+        .remove(detached.node())
+        .expect("button should detach");
+    assert!(matches!(
+        context.focus(&detached),
+        Err(DomError::Detached { .. })
+    ));
+}
+
+#[wasm_bindgen_test]
+fn browser_element_and_window_resources_cancel_independently() {
+    let browser = BrowserDom::from_window().expect("browser DOM should be available");
+    let (raw_host, host) = test_host(&browser);
+    let context = browser.context();
+    let element = context.element(&host).expect("host should be an element");
+    let element_calls = Rc::new(Cell::new(0));
+    let window_calls = Rc::new(Cell::new(0));
+    let element_calls_for_bridge = element_calls.clone();
+    let window_calls_for_bridge = window_calls.clone();
+    let element_bridge: Rc<dyn DomEventBridge> = Rc::new(move |_| {
+        element_calls_for_bridge.set(element_calls_for_bridge.get() + 1);
+        Ok(())
+    });
+    let window_bridge: Rc<dyn DomEventBridge> = Rc::new(move |_| {
+        window_calls_for_bridge.set(window_calls_for_bridge.get() + 1);
+        Ok(())
+    });
+    let element_resource = context
+        .listen(
+            PhysicalEventRequest::new(&element, EventSpec::new("click", EventKind::Mouse))
+                .with_bridge(element_bridge),
+        )
+        .expect("element listener should attach");
+    let window_resource = context
+        .listen_window(
+            WindowEventRequest::new(EventSpec::new("resize", EventKind::Custom))
+                .with_bridge(window_bridge),
+        )
+        .expect("window listener should attach");
+
+    raw_host
+        .dispatch_event(&Event::new("click").expect("click event"))
+        .expect("element event should dispatch");
+    web_sys::window()
+        .expect("window should exist")
+        .dispatch_event(&Event::new("resize").expect("resize event"))
+        .expect("window event should dispatch");
+    assert_eq!(element_calls.get(), 1);
+    assert_eq!(window_calls.get(), 1);
+
+    element_resource
+        .cancel()
+        .expect("element listener should cancel");
+    element_resource
+        .cancel()
+        .expect("repeated element cancellation should be inert");
+    assert_eq!(element_resource.state(), HostResourceState::Cancelled);
+    raw_host
+        .dispatch_event(&Event::new("click").expect("click event"))
+        .expect("element event should dispatch after cancellation");
+    web_sys::window()
+        .expect("window should exist")
+        .dispatch_event(&Event::new("resize").expect("resize event"))
+        .expect("window event should dispatch after element cancellation");
+    assert_eq!(element_calls.get(), 1);
+    assert_eq!(window_calls.get(), 2);
+
+    window_resource
+        .cancel()
+        .expect("window listener should cancel");
+    window_resource
+        .cancel()
+        .expect("repeated window cancellation should be inert");
+    assert_eq!(window_resource.state(), HostResourceState::Cancelled);
+    web_sys::window()
+        .expect("window should exist")
+        .dispatch_event(&Event::new("resize").expect("resize event"))
+        .expect("window event should dispatch after cancellation");
+    assert_eq!(window_calls.get(), 2);
+    remove_host(&raw_host);
+}
+
 fn app(browser: &BrowserDom, host: silex_dom::DomNode) -> MountedApp {
     MountedApp::new(
         Runtime::new(),
@@ -56,6 +230,85 @@ fn app(browser: &BrowserDom, host: silex_dom::DomNode) -> MountedApp {
         host,
         CleanupSink::new(|_| {}),
     )
+}
+
+#[wasm_bindgen_test(async)]
+async fn browser_mount_dom_action_focuses_node_ref_and_closes_events() {
+    let browser = BrowserDom::from_window().expect("browser DOM should be available");
+    let (raw_host, host) = test_host(&browser);
+    let mut mounted = app(&browser, host);
+    let element_calls = Rc::new(Cell::new(0));
+    let window_calls = Rc::new(Cell::new(0));
+
+    mounted
+        .mount({
+            let element_calls = element_calls.clone();
+            let window_calls = window_calls.clone();
+            move |context| {
+                let handler = context.access().error_handler(|_| {}).expect("handler");
+                let node_ref = context.owner().node_ref();
+                let action = context.dom_action();
+                let action_for_element = action.clone();
+                let node_ref_for_element = node_ref.clone();
+                let window_calls_for_attribute = window_calls.clone();
+                let element_calls_for_handler = element_calls.clone();
+                let view = Element::new("input")
+                    .node_ref(node_ref)
+                    .on_click(move |_| {
+                        action_for_element.with_context(|dom| node_ref_for_element.focus(dom))?;
+                        element_calls_for_handler.set(element_calls_for_handler.get() + 1);
+                        Ok(())
+                    })
+                    .apply(silex_view::AttrOp::custom(
+                        move |_element, mount_context| {
+                            let window_calls_for_handler = window_calls_for_attribute.clone();
+                            bind_window_event(
+                                mount_context,
+                                ViewEvent::new("resize", silex_view::EventKind::Custom),
+                                move |_| {
+                                    window_calls_for_handler
+                                        .set(window_calls_for_handler.get() + 1);
+                                    Ok(())
+                                },
+                                mount_context.error_handler(),
+                            )
+                        },
+                    ));
+                context.mount_unit(view, handler.view())
+            }
+        })
+        .expect("focus view should mount");
+
+    let input = query_element(&raw_host, "input");
+    input
+        .dispatch_event(&MouseEvent::new("click").expect("click event"))
+        .expect("input click should dispatch");
+    web_sys::window()
+        .expect("window should exist")
+        .dispatch_event(&Event::new("resize").expect("resize event"))
+        .expect("window event should dispatch");
+    flush_browser_tasks().await;
+    let active: web_sys::Node = document()
+        .active_element()
+        .expect("active element should exist")
+        .into();
+    let input_node: web_sys::Node = input.clone().into();
+    assert!(active.is_same_node(Some(&input_node)));
+    assert_eq!(element_calls.get(), 1);
+    assert_eq!(window_calls.get(), 1);
+
+    mounted.dispose().expect("dispose should succeed");
+    input
+        .dispatch_event(&MouseEvent::new("click").expect("click event"))
+        .expect("element event after dispose should dispatch");
+    web_sys::window()
+        .expect("window should exist")
+        .dispatch_event(&Event::new("resize").expect("resize event"))
+        .expect("window event after dispose should dispatch");
+    flush_browser_tasks().await;
+    assert_eq!(element_calls.get(), 1);
+    assert_eq!(window_calls.get(), 1);
+    remove_host(&raw_host);
 }
 
 fn remove_host(host: &RawElement) {

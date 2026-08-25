@@ -1,8 +1,8 @@
 #![cfg(target_arch = "wasm32")]
 
 use silex_core::{
-    EffectPhase, ErrorHandlerInput, ErrorHandlerToken, OwnerAccess, ReadSignal, Runtime, RxGet,
-    SilexContext, SilexError, SilexErrorKind, SilexResult,
+    DomError, EffectPhase, ErrorHandlerInput, ErrorHandlerToken, OwnerAccess, ReadSignal, Runtime,
+    RxGet, SilexContext, SilexError, SilexErrorKind, SilexResult,
 };
 use silex_dom::browser::BrowserDom;
 use silex_router::macros::router;
@@ -57,13 +57,21 @@ fn mount_view<'owner, V: View<'owner>>(
     error_handler: ErrorHandlerToken<'owner>,
 ) -> SilexResult<MountInstance<'owner>> {
     let document = web_sys::window()
-        .ok_or_else(|| SilexError::fatal(SilexErrorKind::Dom("window missing".into())))?
+        .ok_or_else(|| {
+            SilexError::from(DomError::Backend {
+                operation: "router test window",
+                message: "window is unavailable".to_string(),
+            })
+        })?
         .document()
-        .ok_or_else(|| SilexError::fatal(SilexErrorKind::Dom("document missing".into())))?;
+        .ok_or_else(|| {
+            SilexError::from(DomError::Backend {
+                operation: "router test document",
+                message: "document is unavailable".to_string(),
+            })
+        })?;
     let browser = BrowserDom::new(document);
-    let parent = browser
-        .from_web_sys_node(parent.clone())
-        .map_err(|error| SilexError::fatal(SilexErrorKind::Dom(error.to_string())))?;
+    let parent = browser.from_web_sys_node(parent.clone())?;
     let context = MountContext::for_parent(
         browser.context(),
         parent,
@@ -620,7 +628,9 @@ fn router_does_not_mount_outlet_when_listener_registration_fails() {
         let (owner, error_handler) = test_owner(owner);
         assert!(matches!(
             mount_view(&view, &owner, &host, error_handler),
-            Err(SilexError::Fatal(SilexErrorKind::Dom(_)))
+            Err(SilexError::Fatal(SilexErrorKind::Dom(
+                DomError::Backend { .. }
+            )))
         ));
     });
 

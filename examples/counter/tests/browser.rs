@@ -1,11 +1,11 @@
 #![cfg(target_arch = "wasm32")]
 
 use gloo_timers::future::TimeoutFuture;
-use silex::bootstrap::{AppHost, AppHostError, HostState};
+use silex::bootstrap::{AppHost, HostState};
 use silex::dom::CleanupSink;
 use silex::reexports::wasm_bindgen::{JsCast, JsValue};
 use silex::reexports::web_sys::{self, Document, Element as DomElement, HtmlElement, Node};
-use silex::view::{Element, MountBuilderContext};
+use silex::view::{Element, MountBuilderContext, ViewError};
 use silex::{Runtime, SilexError, SilexErrorKind, SilexResult};
 use silex_counter::{mount_counter, mount_counter_into};
 use wasm_bindgen_test::*;
@@ -191,7 +191,11 @@ fn counter_mount_failure_preserves_error_and_ready_state() {
             )))
         })
         .expect_err("the rejected builder error should be returned");
-    assert!(matches!(error, AppHostError::Mount(_)));
+    assert!(matches!(
+        error.kind(),
+        SilexErrorKind::View(view_error)
+            if matches!(view_error.as_ref(), ViewError::Mount(_))
+    ));
     assert_eq!(host.state(), HostState::Ready);
     assert!(
         !host

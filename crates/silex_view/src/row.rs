@@ -5,7 +5,8 @@ use silex_core::{
     CloseError, ClosePhase, CloseSource, CloseTransaction, EffectPhase, OwnerChild, ReactiveError,
     SilexError, SilexErrorKind, SilexResult,
 };
-use silex_dom::{DomContext, DomNode, DomRange, NodeKind, RangeRequest};
+use silex_dom::tree::InsertRequest;
+use silex_dom::{DomContext, DomError, DomNode, DomRange, NodeKind, RangeRequest};
 use std::{
     cell::{Cell, RefCell},
     panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
@@ -150,22 +151,16 @@ impl Drop for RangeGuard {
 
 impl RangeHandle {
     pub(crate) fn detached(context: &DomContext, label: &str) -> SilexResult<Self> {
-        let fragment = context.create_fragment().map_err(crate::error::dom_error)?;
+        let fragment = context.create_fragment()?;
         Self::append(context, &fragment, label)
     }
     pub(crate) fn append(context: &DomContext, parent: &DomNode, label: &str) -> SilexResult<Self> {
-        let start = context
-            .create_comment(format!("{label}-start"))
-            .map_err(crate::error::dom_error)?;
-        let end = context
-            .create_comment(format!("{label}-end"))
-            .map_err(crate::error::dom_error)?;
-        context
-            .append(parent, &start)
-            .map_err(crate::error::dom_error)?;
+        let start = context.create_comment(format!("{label}-start"))?;
+        let end = context.create_comment(format!("{label}-end"))?;
+        context.append(parent, &start)?;
         if let Err(error) = context.append(parent, &end) {
             let _ = context.remove(&start);
-            return Err(crate::error::dom_error(error));
+            return Err(error.into());
         }
         Ok(Self {
             context: context.clone(),
@@ -185,29 +180,14 @@ impl RangeHandle {
         label: &str,
     ) -> SilexResult<Self> {
         let parent = context
-            .parent(reference)
-            .map_err(crate::error::dom_error)?
-            .ok_or_else(|| {
-                SilexError::fatal(SilexErrorKind::Dom(
-                    "cannot create a range without a parent".into(),
-                ))
-            })?;
-        let start = context
-            .create_comment(format!("{label}-start"))
-            .map_err(crate::error::dom_error)?;
-        let end = context
-            .create_comment(format!("{label}-end"))
-            .map_err(crate::error::dom_error)?;
-        context
-            .insert_before(silex_dom::tree::InsertRequest::before(
-                &parent, &start, reference,
-            ))
-            .map_err(crate::error::dom_error)?;
-        if let Err(error) = context.insert_before(silex_dom::tree::InsertRequest::before(
-            &parent, &end, reference,
-        )) {
+            .parent(reference)?
+            .ok_or_else(|| SilexError::from(DomError::NoParent))?;
+        let start = context.create_comment(format!("{label}-start"))?;
+        let end = context.create_comment(format!("{label}-end"))?;
+        context.insert_before(InsertRequest::before(&parent, &start, reference))?;
+        if let Err(error) = context.insert_before(InsertRequest::before(&parent, &end, reference)) {
             let _ = context.remove(&start);
-            return Err(crate::error::dom_error(error));
+            return Err(error.into());
         }
         Ok(Self {
             context: context.clone(),
@@ -217,11 +197,8 @@ impl RangeHandle {
     }
     pub(crate) fn parent(&self) -> SilexResult<DomNode> {
         self.context
-            .parent(&self.start)
-            .map_err(crate::error::dom_error)?
-            .ok_or_else(|| {
-                SilexError::fatal(SilexErrorKind::Dom("range start node has no parent".into()))
-            })
+            .parent(&self.start)?
+            .ok_or_else(|| SilexError::from(DomError::NoParent))
     }
 
     pub(crate) fn nodes(&self) -> SilexResult<Vec<DomNode>> {
@@ -231,10 +208,9 @@ impl RangeHandle {
                 parent,
                 start: self.start.clone(),
                 end: self.end.clone(),
-            })
-            .map_err(crate::error::dom_error)?
+            })?
             .nodes()
-            .map_err(crate::error::dom_error)
+            .map_err(Into::into)
     }
 
     pub(crate) fn dom_range(&self) -> SilexResult<DomRange> {
@@ -245,19 +221,14 @@ impl RangeHandle {
                 start: self.start.clone(),
                 end: self.end.clone(),
             })
-            .map_err(crate::error::dom_error)
+            .map_err(Into::into)
     }
 
     pub(crate) fn remove(&self) -> SilexResult<()> {
-        if self
-            .context
-            .parent(&self.start)
-            .map_err(crate::error::dom_error)?
-            .is_none()
-        {
+        if self.context.parent(&self.start)?.is_none() {
             return Ok(());
         }
-        self.dom_range()?.remove().map_err(crate::error::dom_error)
+        self.dom_range()?.remove().map_err(Into::into)
     }
 
     fn initial_state(&self) -> SilexResult<RowState> {
@@ -422,7 +393,7 @@ impl<'scope, T: Clone + 'scope> RowBlock<'scope, T> {
                     Ok(fragment) => fragment,
                     Err(error) => {
                         let _ = close_scope(candidate_scope.clone(), &candidate_scope);
-                        return Err(crate::error::dom_error(error));
+                        return Err(error.into());
                     }
                 };
                 let render_transaction = MountTransaction::new();
@@ -465,31 +436,26 @@ impl<'scope, T: Clone + 'scope> RowBlock<'scope, T> {
                     Ok(nodes) => nodes,
                     Err(error) => {
                         let _ = close_scope(candidate_scope.clone(), &candidate_scope);
-                        return Err(crate::error::dom_error(error));
+                        return Err(error.into());
                     }
                 };
                 let parent = match context.dom().parent(&range.end) {
                     Ok(Some(parent)) => parent,
                     Ok(None) => {
                         let _ = close_scope(candidate_scope.clone(), &candidate_scope);
-                        return Err(SilexError::fatal(SilexErrorKind::Dom(
-                            "row range has no parent".into(),
-                        )));
+                        return Err(SilexError::from(DomError::NoParent));
                     }
                     Err(error) => {
                         let _ = close_scope(candidate_scope.clone(), &candidate_scope);
-                        return Err(crate::error::dom_error(error));
+                        return Err(error.into());
                     }
                 };
-                if let Err(error) =
-                    context
-                        .dom()
-                        .insert_before(silex_dom::tree::InsertRequest::before(
-                            &parent, &fragment, &range.end,
-                        ))
+                if let Err(error) = context
+                    .dom()
+                    .insert_before(InsertRequest::before(&parent, &fragment, &range.end))
                 {
                     let _ = candidate_scope.close();
-                    return Err(crate::error::dom_error(error));
+                    return Err(error.into());
                 }
                 let previous = content.borrow_mut().replace(MountedContent {
                     nodes: new_nodes,
@@ -537,7 +503,7 @@ impl<'scope, T> RowBlock<'scope, T> {
             .range
             .dom_range()?
             .move_before(target_parent, reference)
-            .map_err(crate::error::dom_error);
+            .map_err(SilexError::from);
         result?;
         self.state = RowState::Mounted;
         self.ensure_invariant()

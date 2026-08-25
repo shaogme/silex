@@ -1,16 +1,18 @@
 //! 应用级 mount 生命周期。
 
-use crate::context::{MountAncestry, MountContext, MountTarget, MountTransaction};
+use crate::context::{MountAncestry, MountContext, MountDomAction, MountTarget, MountTransaction};
 use crate::contract::{MountInstance, View};
-use crate::error::{DisposeError, MountError};
+use crate::error::MountError;
 use crate::owner::{CleanupReporter, MountOwnerToken};
 use silex_core::{
-    CloseError, ErrorHandlerInput, OwnerAccess, OwnerHandle, Runtime, SilexError, SilexErrorKind,
-    SilexResult,
+    CloseError, DisposeError, ErrorHandlerInput, OwnerAccess, OwnerHandle, Runtime, SilexError,
+    SilexErrorKind, SilexResult,
 };
 use silex_dom::error::{
-    CleanupFailure, CleanupOrigin, CleanupReport, CleanupSink, DropFailureReport,
+    CleanupFailure, CleanupFailureDiagnostic, CleanupOrigin, CleanupReport, CleanupSink,
+    DropFailureReport,
 };
+use silex_dom::log::console_error;
 use silex_dom::{DomContext, DomNode};
 use std::cell::RefCell;
 use std::fmt;
@@ -33,6 +35,11 @@ impl<'scope> MountBuilderContext<'scope> {
 
     pub fn dom(&self) -> &DomContext {
         &self.dom
+    }
+
+    /// Create an owner-bound DOM action for callbacks created during mount.
+    pub fn dom_action(&self) -> MountDomAction<'scope> {
+        MountDomAction::new(self.dom.clone(), self.owner.clone())
     }
 
     pub fn parent(&self) -> &DomNode {
@@ -78,7 +85,7 @@ struct MountBoundary {
 
 impl MountBoundary {
     fn new(dom: DomContext, host: DomNode) -> SilexResult<Self> {
-        let staging = dom.create_fragment().map_err(crate::error::dom_error)?;
+        let staging = dom.create_fragment()?;
         Ok(Self {
             dom,
             host,
@@ -95,10 +102,7 @@ impl MountBoundary {
                 "mount boundary was finalized twice".into(),
             )));
         }
-        self.owned_nodes = self
-            .dom
-            .children(&self.staging)
-            .map_err(crate::error::dom_error)?;
+        self.owned_nodes = self.dom.children(&self.staging)?;
         self.finished = true;
         Ok(())
     }
@@ -109,9 +113,7 @@ impl MountBoundary {
                 "mount boundary was committed twice".into(),
             )));
         }
-        self.dom
-            .append(&self.host, &self.staging)
-            .map_err(crate::error::dom_error)?;
+        self.dom.append(&self.host, &self.staging)?;
         self.committed = true;
         Ok(())
     }
@@ -132,11 +134,11 @@ impl MountBoundary {
             match self.dom.parent(&node) {
                 Ok(Some(current)) if current == parent => {
                     if let Err(error) = self.dom.remove(&node) {
-                        errors.push(crate::error::dom_error(error));
+                        errors.push(error.into());
                     }
                 }
                 Ok(_) => {}
-                Err(error) => errors.push(crate::error::dom_error(error)),
+                Err(error) => errors.push(error.into()),
             }
         }
         self.committed = false;
@@ -186,6 +188,23 @@ impl fmt::Debug for MountedApp {
 }
 
 impl MountedApp {
+    /// Construct an app after validating that the host belongs to `dom`.
+    pub fn try_new(
+        runtime: Runtime,
+        dom: DomContext,
+        host: DomNode,
+        cleanup_sink: CleanupSink,
+    ) -> SilexResult<Self> {
+        let app = Self::new(runtime, dom, host, cleanup_sink);
+        app.validate_host()?;
+        Ok(app)
+    }
+
+    /// Construct an app while preserving the historical infallible signature.
+    ///
+    /// The host is still checked before every mutating mount operation; a
+    /// foreign host is never silently mounted. Prefer [`Self::try_new`] when
+    /// construction-time validation is available to the caller.
     pub fn new(
         runtime: Runtime,
         dom: DomContext,
@@ -203,19 +222,22 @@ impl MountedApp {
         }
     }
 
-    pub fn mount<F>(&mut self, builder: F) -> Result<(), MountError>
+    pub fn mount<F>(&mut self, builder: F) -> SilexResult<()>
     where
         F: for<'scope> FnOnce(&MountBuilderContext<'scope>) -> SilexResult<()>,
     {
+        if let Err(error) = self.validate_host() {
+            return Err(error);
+        }
         if self.state == MountedState::Poisoned {
-            return Err(poisoned_error());
+            return Err(SilexError::from(poisoned_error()));
         }
         if matches!(self.state, MountedState::Mounting | MountedState::Disposing) {
             self.state = MountedState::Poisoned;
-            return Err(poisoned_error());
+            return Err(SilexError::from(poisoned_error()));
         }
         if self.session.is_some() {
-            self.dispose().map_err(|error| {
+            self.dispose_inner().map_err(|error| {
                 MountError::new(
                     SilexError::fatal(SilexErrorKind::Framework(
                         "previous mount cleanup failed".into(),
@@ -241,11 +263,11 @@ impl MountedApp {
                 } else {
                     MountedState::Poisoned
                 };
-                Err(error)
+                Err(error.into())
             }
             Err(panic) => {
                 self.state = MountedState::Poisoned;
-                Err(MountError::poisoned(panic_error("mount operation", panic)))
+                Err(MountError::poisoned(panic_error("mount operation", panic)).into())
             }
         }
     }
@@ -273,7 +295,11 @@ impl MountedApp {
         self.host.clone()
     }
 
-    pub fn dispose(&mut self) -> Result<(), DisposeError> {
+    pub fn dispose(&mut self) -> SilexResult<()> {
+        self.dispose_inner().map_err(Into::into)
+    }
+
+    fn dispose_inner(&mut self) -> Result<(), DisposeError> {
         if self.state == MountedState::Poisoned {
             return Ok(());
         }
@@ -349,6 +375,11 @@ impl MountedApp {
             }
         }
     }
+
+    fn validate_host(&self) -> SilexResult<()> {
+        self.dom.validate_node(&self.host)?;
+        Ok(())
+    }
 }
 
 impl Drop for MountedApp {
@@ -365,17 +396,14 @@ impl Drop for MountedApp {
             let cleanup = cleanup
                 .into_iter()
                 .map(|failure| {
-                    silex_dom::error::CleanupFailureDiagnostic::new(
-                        failure.origin,
-                        failure.error.into_diagnostic(),
-                    )
+                    CleanupFailureDiagnostic::new(failure.origin, failure.error.into_diagnostic())
                 })
                 .collect();
             self.cleanup_sink
                 .record(DropFailureReport::from_parts(cleanup, boundary));
         }));
         if result.is_err() {
-            silex_dom::log::console_error("Silex cleanup sink panicked");
+            console_error("Silex cleanup sink panicked");
         }
     }
 }

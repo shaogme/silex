@@ -1,4 +1,4 @@
-use silex::bootstrap::{BootstrapError, BrowserBootstrap, JsAppHost};
+use silex::bootstrap::{BrowserBootstrap, JsAppHost};
 use silex::dom::CleanupSink;
 use silex::prelude::*;
 use silex::reexports::*;
@@ -115,14 +115,14 @@ fn DebugPanel<'scope, Ctx>(#[ctx] ctx: Ctx, user: UserStore<'scope>) -> impl Vie
 }
 
 /// Mount the Store demo into the conventional `#app` target.
-pub fn mount_store() -> Result<JsAppHost, BootstrapError> {
+pub fn mount_store() -> SilexResult<JsAppHost> {
     let mut bootstrap = BrowserBootstrap::from_id("app", CleanupSink::console())?;
     bootstrap.mount(Runtime::new(), mount_store_view)?;
     bootstrap.into_js_host()
 }
 
 /// Mount the Store demo into a caller-provided target node.
-pub fn mount_store_into(target: web_sys::Node) -> Result<JsAppHost, BootstrapError> {
+pub fn mount_store_into(target: web_sys::Node) -> SilexResult<JsAppHost> {
     let mut bootstrap = BrowserBootstrap::from_web_sys(target, CleanupSink::console())?;
     bootstrap.mount(Runtime::new(), mount_store_view)?;
     bootstrap.into_js_host()

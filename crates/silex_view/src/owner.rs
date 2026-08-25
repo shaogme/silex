@@ -523,11 +523,7 @@ impl<'scope> MountOwnerToken<'scope> {
         H: ErrorHandlerInput<'scope>,
     {
         let result = self.on_cleanup(
-            Box::new(move || {
-                resource
-                    .cancel()
-                    .map_err(|error| SilexError::fatal(SilexErrorKind::Dom(error.to_string())))
-            }),
+            Box::new(move || resource.cancel().map_err(SilexError::from)),
             error_handler,
         );
         if result.is_err() { /* resource is dropped here and cancellation is idempotent */ }

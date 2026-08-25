@@ -1,5 +1,5 @@
 use silex_core::reactivity::Signal;
-use silex_core::{Runtime, RxGet, SilexError, SilexErrorKind};
+use silex_core::{ReactiveError, Runtime, RxGet, SilexError, SilexErrorKind};
 use silex_dom::error::CleanupSink;
 use silex_dom::ssr::SsrDom;
 use silex_view::attribute::{AttributeBuilder, GlobalAttributes, GlobalEventAttributes};
@@ -172,11 +172,27 @@ fn element_child_failure_rolls_back_provisional_nodes_and_owner() {
     let failure = mounted
         .mount(|context| {
             let handler = context.access().error_handler(|_| {}).expect("handler");
-            context.mount_unit(Element::with_child("section", FailingChild), handler.view())
+            let node_ref = context.owner().node_ref();
+            let result = context.mount_unit(
+                Element::with_child("section", FailingChild).node_ref(node_ref.clone()),
+                handler.view(),
+            );
+            assert!(
+                node_ref
+                    .get()
+                    .expect("node ref should be readable")
+                    .is_none(),
+                "provisional rollback must clear the binding"
+            );
+            result
         })
         .expect_err("failing child should fail the element mount");
 
-    assert!(failure.can_retry());
+    assert!(matches!(
+        failure.kind(),
+        SilexErrorKind::View(view)
+            if view.mount_error().is_some_and(|error| error.can_retry())
+    ));
     assert_eq!(dom.serialize(Default::default()).expect("serialize"), "");
     mounted
         .mount(|context| {
@@ -188,6 +204,124 @@ fn element_child_failure_rolls_back_provisional_nodes_and_owner() {
         dom.serialize(Default::default()).expect("serialize"),
         "<p>recovered</p>"
     );
+}
+
+#[test]
+fn dynamic_node_ref_replacement_keeps_the_new_binding() {
+    let dom = SsrDom::new();
+    let mut mounted = app(&dom);
+    let observed = Rc::new(Cell::new(0_u64));
+    let observed_for_assertion = observed.clone();
+    mounted
+        .mount(|context| {
+            let handler = context.access().error_handler(|_| {}).expect("handler");
+            let show_second = context.access().signal(false).expect("branch signal");
+            let node_ref = context.owner().node_ref();
+            let node_ref_for_renderer = node_ref.clone();
+            let renderer = DynamicRenderer::new(move |render_context| {
+                let tag = if show_second.get()? {
+                    "second"
+                } else {
+                    "first"
+                };
+                render_context.mount(&Element::new(tag).node_ref(node_ref_for_renderer.clone()))
+            });
+            context.mount_unit(renderer, handler.view())?;
+            observed_for_assertion.set(
+                node_ref
+                    .get()
+                    .expect("first binding should be readable")
+                    .expect("first binding should be present")
+                    .identity(),
+            );
+            show_second.set(true)?;
+            let current = node_ref
+                .get()
+                .expect("replacement binding should be readable")
+                .expect("replacement binding should be present")
+                .identity();
+            assert_ne!(current, observed_for_assertion.get());
+            Ok(())
+        })
+        .expect("dynamic ref replacement should mount");
+    assert!(observed.get() > 0);
+    mounted.dispose().expect("dispose should succeed");
+}
+
+#[test]
+fn mount_dom_action_resolves_node_ref_and_is_closed_with_owner() {
+    let dom = SsrDom::new();
+    let mut mounted = app(&dom);
+    let action_closed = Rc::new(Cell::new(false));
+    let action_closed_for_assertion = action_closed.clone();
+    mounted
+        .mount(|context| {
+            let handler = context.access().error_handler(|_| {}).expect("handler");
+            let node_ref = context.owner().node_ref();
+            let action = context.dom_action();
+            context.mount_unit(
+                Element::new("button").node_ref(node_ref.clone()),
+                handler.view(),
+            )?;
+            let resolved = action
+                .with_context(|dom| node_ref.resolve_element(dom))?
+                .expect("mount action should resolve the bound element");
+            assert_eq!(
+                resolved.node().identity(),
+                node_ref
+                    .get()
+                    .expect("binding should be readable")
+                    .expect("binding")
+                    .identity()
+            );
+            let focus_error = action
+                .with_context(|dom| node_ref.focus(dom))
+                .expect_err("SSR focus must report unsupported");
+            assert!(format!("{focus_error}").contains("unsupported capability: focus"));
+            let action_closed_for_cleanup = action_closed.clone();
+            context.owner().on_cleanup(
+                Box::new(move || {
+                    let error = action
+                        .with_context(|dom| node_ref.resolve_element(dom))
+                        .expect_err("closed owner must gate the mount action");
+                    action_closed_for_cleanup.set(matches!(
+                        error.kind(),
+                        SilexErrorKind::Reactivity(ReactiveError::NoSuchNode)
+                    ));
+                    Ok(())
+                }),
+                handler.view(),
+            )
+        })
+        .expect("mount action should mount");
+    mounted.dispose().expect("dispose should succeed");
+    assert!(action_closed_for_assertion.get());
+}
+
+#[test]
+fn mounted_app_rejects_cross_context_hosts_before_mounting() {
+    let dom = SsrDom::new();
+    let foreign = SsrDom::new();
+    let foreign_host = foreign.document().expect("foreign document").node().clone();
+    let result = MountedApp::try_new(
+        Runtime::new(),
+        dom.context(),
+        foreign_host.clone(),
+        CleanupSink::new(|_| {}),
+    );
+    assert!(result.is_err(), "try_new must reject a foreign host");
+
+    let mut mounted = MountedApp::new(
+        Runtime::new(),
+        dom.context(),
+        foreign_host,
+        CleanupSink::new(|_| {}),
+    );
+    let error = mounted
+        .mount(|_| Ok(()))
+        .expect_err("new must reject the foreign host on the mount path");
+    assert!(format!("{error}").contains("different contexts"));
+    assert_eq!(dom.serialize(Default::default()).expect("serialize"), "");
 }
 
 #[test]
@@ -371,7 +505,11 @@ fn mount_can_retry_after_failure_and_remounts_cleanly() {
             )))
         })
         .expect_err("mount should fail");
-    assert!(failure.can_retry());
+    assert!(matches!(
+        failure.kind(),
+        SilexErrorKind::View(view)
+            if view.mount_error().is_some_and(|error| error.can_retry())
+    ));
     assert!(!mounted.is_poisoned());
     assert_eq!(dom.serialize(Default::default()).expect("serialize"), "");
 
@@ -405,15 +543,21 @@ fn panicking_mount_poisoning_keeps_host_empty() {
     let error = mounted
         .mount(|_| -> silex_core::SilexResult<()> { panic!("intentional panic") })
         .expect_err("panic should become a mount error");
-    assert!(error.is_poisoned());
+    assert!(matches!(
+        error.kind(),
+        SilexErrorKind::View(view)
+            if view.mount_error().is_some_and(|error| error.is_poisoned())
+    ));
     assert!(mounted.is_poisoned());
     assert_eq!(dom.serialize(Default::default()).expect("serialize"), "");
-    assert!(
-        mounted
-            .mount(|_| Ok(()))
-            .expect_err("poisoned app should reject retry")
-            .is_poisoned()
-    );
+    let retry_error = mounted
+        .mount(|_| Ok(()))
+        .expect_err("poisoned app should reject retry");
+    assert!(matches!(
+        retry_error.kind(),
+        SilexErrorKind::View(view)
+            if view.mount_error().is_some_and(|error| error.is_poisoned())
+    ));
 }
 
 #[test]

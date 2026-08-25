@@ -26,14 +26,15 @@ pub use attribute::{
     update_class_tokens,
 };
 pub use context::{
-    MountAncestry, MountContext, MountTarget, MountTransaction, MountTransactionState,
+    MountAncestry, MountContext, MountDomAction, MountTarget, MountTransaction,
+    MountTransactionState,
 };
 pub use contract::{
     MountInstance, Prop, PropFixed, PropInto, PropMissing, View, ViewCons, ViewNil,
 };
 pub use dynamic::{BranchEvaluation, BranchRenderContext, DynamicRenderer, StableBranch};
 pub use element::{Element, Tag, TagMetadata, TagNamespace, TypedElement, text};
-pub use error::{DisposeError, MountAvailability, MountError, RollbackError};
+pub use error::{DisposeError, MountAvailability, MountError, RollbackError, ViewError};
 pub use event::{
     DomEvent, DomRectData, Event, EventDescriptor, EventHandler, EventKind, EventSpec,
     MouseEventData, PointerEventData, WithEventArg, WithoutEventArg, bind_window_event,
@@ -59,8 +60,9 @@ pub mod prelude {
     pub use crate::{
         AnyView, Attr, AttrOp, AttributeBuilder, BranchEvaluation, BranchRenderContext, DomContext,
         DomElement, DomEvent, DomNode, DomRectData, Element, Event, EventDescriptor, EventKind,
-        EventSpec, HostResource, MountAncestry, MountBuilderContext, MountContext, MountInstance,
-        MountOwner, MountOwnerToken, MountState, MountedApp, PointerEventData, Prop, PropFixed,
-        PropMissing, RowUpdater, Tag, TypedElement, View, ViewCons, ViewNil, chain, event,
+        EventSpec, HostResource, MountAncestry, MountBuilderContext, MountContext, MountDomAction,
+        MountInstance, MountOwner, MountOwnerToken, MountState, MountedApp, PointerEventData, Prop,
+        PropFixed, PropMissing, RowUpdater, Tag, TypedElement, View, ViewCons, ViewNil, chain,
+        event,
     };
 }

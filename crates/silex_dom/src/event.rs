@@ -67,8 +67,8 @@ impl EventSpec {
 
 /// Backend-neutral physical event descriptor.
 ///
-/// Typed browser payloads belong to the legacy View compatibility layer in
-/// `event.rs`; this trait deliberately has no associated browser type.
+/// High-level View handlers use the backend-neutral `DomEvent` bridge; this
+/// trait deliberately has no associated browser type.
 pub trait EventDescriptor: Copy + Clone + 'static {
     fn name(&self) -> Cow<'static, str>;
 
@@ -423,6 +423,7 @@ impl PhysicalEventRequest {
 /// Backend-neutral event payload retained by SSR for hydration planning.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EventRecord {
+    pub id: u64,
     pub target_backend: u64,
     pub target_identity: u64,
     pub target_kind: &'static str,

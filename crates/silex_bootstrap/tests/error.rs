@@ -1,6 +1,6 @@
 use silex_bootstrap::AppHostError;
-use silex_core::{CloseError, Runtime, SilexError, SilexErrorKind};
-use silex_dom::{CleanupFailure, CleanupOrigin, CleanupReport};
+use silex_core::{BootstrapError, CloseError, Runtime, SilexError, SilexErrorKind};
+use silex_dom::{CleanupFailure as DomCleanupFailure, CleanupOrigin, CleanupReport};
 use silex_view::{DisposeError, MountError};
 
 fn cleanup_error() -> CloseError {
@@ -22,14 +22,22 @@ fn cleanup_error() -> CloseError {
 #[test]
 fn app_host_error_keeps_mount_and_dispose_reports() {
     let report = CleanupReport::from_parts(
-        vec![CleanupFailure::new(CleanupOrigin::Root, cleanup_error())],
+        vec![DomCleanupFailure::new(CleanupOrigin::Root, cleanup_error())],
         vec![SilexError::recoverable(SilexErrorKind::Framework(
             "boundary failure".to_string(),
         ))],
     );
-    let mount = AppHostError::Mount(MountError::new(
+    let mount = AppHostError::Mount(Box::new(MountError::new(
         SilexError::recoverable(SilexErrorKind::Framework("mount failure".to_string())),
         report,
+    )));
+
+    let unified = SilexError::from(mount.clone());
+    assert!(matches!(
+        unified.kind(),
+        SilexErrorKind::Bootstrap(error)
+            if matches!(error.as_ref(), BootstrapError::Host(host)
+                if matches!(host.as_ref(), AppHostError::Mount(_)))
     ));
 
     let mount_error = mount
@@ -45,7 +53,7 @@ fn app_host_error_keeps_mount_and_dispose_reports() {
         AppHostError::Mount(error) => error.into_parts().1,
         _ => unreachable!("expected mount error"),
     };
-    let dispose = AppHostError::Dispose(DisposeError::new(report));
+    let dispose = AppHostError::Dispose(Box::new(DisposeError::new(report)));
     let dispose_error = dispose
         .dispose_error()
         .expect("dispose error should be available");

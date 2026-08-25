@@ -1,8 +1,9 @@
-use crate::error::unsupported;
 use crate::owner::{MountErrorHandler, MountOwnerToken};
 use crate::{MountInstance, View};
-use silex_core::{SilexError, SilexErrorKind, SilexResult};
-use silex_dom::{DomContext, DomElement, DomNode};
+use silex_core::{DomError, ReactiveError, SilexError, SilexErrorKind, SilexResult};
+use silex_dom::{
+    DomContext, DomElement, DomNode, DomResult, node_ref::NodeRef, tree::InsertRequest,
+};
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
@@ -38,23 +39,15 @@ impl MountTarget {
 
     pub fn append_node(&self, node: &DomNode) -> SilexResult<()> {
         match self {
-            Self::Append { context, parent } => context
-                .append(parent, node)
-                .map_err(crate::error::dom_error),
+            Self::Append { context, parent } => context.append(parent, node).map_err(Into::into),
             Self::Before { context, reference } => {
                 let parent = context
                     .parent(reference)
-                    .map_err(crate::error::dom_error)?
-                    .ok_or_else(|| {
-                        SilexError::fatal(SilexErrorKind::Dom(
-                            "mount target reference has no parent".to_string(),
-                        ))
-                    })?;
+                    .map_err(SilexError::from)?
+                    .ok_or_else(|| SilexError::from(DomError::NoParent))?;
                 context
-                    .insert_before(silex_dom::tree::InsertRequest::before(
-                        &parent, node, reference,
-                    ))
-                    .map_err(crate::error::dom_error)
+                    .insert_before(InsertRequest::before(&parent, node, reference))
+                    .map_err(Into::into)
             }
         }
     }
@@ -64,12 +57,8 @@ impl MountTarget {
             Self::Append { parent, .. } => Ok(parent.clone()),
             Self::Before { context, reference } => context
                 .parent(reference)
-                .map_err(crate::error::dom_error)?
-                .ok_or_else(|| {
-                    SilexError::fatal(SilexErrorKind::Dom(
-                        "mount target reference has no parent".to_string(),
-                    ))
-                }),
+                .map_err(SilexError::from)?
+                .ok_or_else(|| SilexError::from(DomError::NoParent)),
         }
     }
 }
@@ -118,8 +107,9 @@ impl MountAncestry {
     }
 
     pub fn closest_logical_element(&self, _selector: &str) -> SilexResult<Option<DomElement>> {
-        unsupported("logical selector matching")?;
-        Ok(None)
+        return Err(SilexError::from(DomError::Unsupported {
+            capability: "logical selector matching",
+        }));
     }
 }
 
@@ -129,6 +119,37 @@ pub enum MountTransactionState {
     Open,
     Committed,
     RolledBack,
+}
+
+/// Owner-bound, backend-neutral capability entry for mount-time DOM actions.
+///
+/// The action never stores a node reference or a browser value. Callers must
+/// provide the operation explicitly through [`Self::with_context`], and the
+/// owner activity gate is checked before the operation runs.
+#[derive(Clone)]
+pub struct MountDomAction<'scope> {
+    dom: DomContext,
+    owner: MountOwnerToken<'scope>,
+}
+
+impl<'scope> MountDomAction<'scope> {
+    pub(crate) fn new(dom: DomContext, owner: MountOwnerToken<'scope>) -> Self {
+        Self { dom, owner }
+    }
+
+    pub fn with_context<R, F>(&self, action: F) -> SilexResult<R>
+    where
+        F: FnOnce(&DomContext) -> DomResult<R>,
+    {
+        if !self.owner.is_active()? {
+            return Err(SilexError::fatal(ReactiveError::NoSuchNode));
+        }
+        action(&self.dom).map_err(Into::into)
+    }
+
+    pub fn focus(&self, node_ref: &NodeRef<'scope>) -> SilexResult<()> {
+        self.with_context(|dom| node_ref.focus(dom))
+    }
 }
 
 type CommitCallback<'scope> = Box<dyn FnOnce() -> SilexResult<()> + 'scope>;
@@ -276,6 +297,11 @@ impl<'scope> MountContext<'scope> {
 
     pub fn dom(&self) -> &DomContext {
         &self.dom
+    }
+
+    /// Create an owner-bound DOM action for event callbacks and mount-time work.
+    pub fn dom_action(&self) -> MountDomAction<'scope> {
+        MountDomAction::new(self.dom.clone(), self.owner.clone())
     }
 
     pub fn target(&self) -> &MountTarget {

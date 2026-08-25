@@ -4,7 +4,7 @@ use silex_bootstrap::{
     AppHostError, BootstrapError, HostState, LifecycleReporter, PageController,
     PageLifecyclePolicy, UnmountOutcome,
 };
-use silex_core::{Runtime, SilexError, SilexResult};
+use silex_core::{Runtime, SilexError, SilexErrorKind, SilexResult, ViewError};
 use silex_dom::CleanupSink;
 use silex_view::{Element, MountBuilderContext};
 use std::{
@@ -12,12 +12,12 @@ use std::{
     rc::Rc,
 };
 use wasm_bindgen_test::*;
-use web_sys::Node;
+use web_sys::{Document, Event, Node, window};
 
 wasm_bindgen_test_configure!(run_in_browser);
 
-fn document() -> web_sys::Document {
-    web_sys::window()
+fn document() -> Document {
+    window()
         .expect("window is available")
         .document()
         .expect("document is available")
@@ -53,8 +53,8 @@ fn mount_text<'scope>(ctx: &MountBuilderContext<'scope>, text: &'static str) -> 
 }
 
 fn dispatch(event_name: &str) {
-    let event = web_sys::Event::new(event_name).expect("event can be created");
-    web_sys::window()
+    let event = Event::new(event_name).expect("event can be created");
+    window()
         .expect("window is available")
         .dispatch_event(&event)
         .expect("event can be dispatched");
@@ -242,8 +242,10 @@ fn lifecycle_reentrancy_is_reported_without_blocking_outer_unmount() {
         .take()
         .expect("reentrant lifecycle error should be reported");
     assert!(matches!(
-        error,
-        BootstrapError::Host(AppHostError::ReentrantOperation)
+        error.kind(),
+        SilexErrorKind::Bootstrap(bootstrap)
+            if matches!(bootstrap.as_ref(), BootstrapError::Host(host)
+                if matches!(host.as_ref(), AppHostError::ReentrantOperation))
     ));
     assert_eq!(controller.state(), HostState::Ready);
     assert_eq!(target.child_nodes().length(), 0);
@@ -284,8 +286,8 @@ fn lifecycle_reporter_receives_cleanup_error() {
         .take()
         .expect("cleanup error should be reported");
     assert!(matches!(
-        error,
-        BootstrapError::Host(AppHostError::Dispose(_))
+        error.kind(),
+        SilexErrorKind::View(view) if matches!(view.as_ref(), ViewError::Dispose(_))
     ));
     assert_eq!(controller.state(), HostState::Poisoned);
     assert_eq!(target.child_nodes().length(), 0);

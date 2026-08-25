@@ -7,7 +7,7 @@ fn call_mount<F>(
     host: &mut AppHost,
     runtime: Runtime,
     builder: F,
-) -> Result<(), silex_bootstrap::AppHostError>
+) -> SilexResult<()>
 where
     F: for<'scope> FnOnce(&MountBuilderContext<'scope>) -> SilexResult<()>,
 {

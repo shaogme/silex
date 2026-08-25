@@ -9,8 +9,8 @@ sort_by = "weight"
 
 `silex_html` 是 Silex 面向应用层的 HTML/SVG facade。它不直接管理浏览器
 DOM，而是把标签名、命名空间、标签类别和常用属性方法组织成可组合的
-`silex_dom::TypedElement`。真正的节点创建、挂载、事件和 owner 清理由
-`silex_dom` 完成。
+`silex_view::TypedElement`。真正的节点创建、挂载、事件和 owner 清理由
+`silex_view` 通过注入的 `silex_dom::DomContext` 完成。
 
 ## 在 Silex 架构中的位置
 
@@ -22,17 +22,18 @@ DOM，而是把标签名、命名空间、标签类别和常用属性方法组�
    生成的标签函数、宏、属性 trait
         │  TypedElement<'scope, T>
         ▼
-       silex_dom
+       silex_view
   View · AttributeBuilder · MountOwner
         │
         ▼
-      web_sys DOM
+  silex_dom::DomContext
+    browser adapter / SSR
 ```
 
 因此，`silex_html` 解决的是“如何用稳定、可发现的 Rust API 描述 HTML/SVG
 视图”，而不是“如何把视图挂到某个 host”。需要处理 `Runtime`、
 `MountedApp`、错误 handler、响应式 effect 或清理时，应阅读
-[`silex_dom` 总文档](@/developer/crates/silex_dom/_index.md)。
+[`silex_view` 总文档](@/developer/crates/silex_view/_index.md)。
 
 ## 稳定入口
 
@@ -45,7 +46,7 @@ crate 根 `lib.rs` 暴露以下入口：
 | 根级标签导出 | `div`、`input`、`svg` 等函数，以及生成的 HTML/SVG marker。 |
 | 根级标签宏 | 非 void 标签的 `div!`、`button!`、`svg!` 等宏。 |
 | `FormAttributes` 等 trait | HTML 常用属性的命名 facade。 |
-| `chain`、`ViewCons`、`ViewNil` | 由 `silex_dom` 重导出的子视图组合工具。 |
+| `chain`、`ViewCons`、`ViewNil` | 由 `silex_view` 提供的子视图组合工具。 |
 
 最小导入通常如下：
 
@@ -82,9 +83,10 @@ let view = div!(
 - HTML 和 SVG 的同名函数通过 `html`/`svg` 模块区分，根级重导出时应注意
   名称冲突。
 
-`TypedElement<'scope, T>` 的 `T: Tag` marker 记录目标 `web_sys` 类型和
-标签能力。`TextTag`、`FormTag`、`MediaTag`、`SvgTag` 等 marker trait 在
-`silex_dom` 中定义，由生成的 `define_tag!` 调用实现。
+`TypedElement<'scope, T>` 的 `T: Tag` marker 只记录 tag name、命名空间、void
+状态和标签能力，不携带 `web_sys` 或 `wasm_bindgen` 类型。`TextTag`、
+`FormTag`、`MediaTag`、`SvgTag` 等 marker trait 在 `silex_view` 中定义，由生成
+的 `silex_view::define_tag!` 调用实现。
 
 ## 属性 facade
 
@@ -139,12 +141,13 @@ let erased = typed.into_untyped().attr("value", "after-erasure");
 
 - 标签函数和标签宏只保存 tag name、namespace、child view 与待应用属性，
   构造阶段不会访问 `window` 或 `document`。
-- 每次 `View::mount` 都通过 `silex_dom` 创建新的 DOM 节点；同一个
+- 每次 `View::mount` 都通过注入的 `DomContext` 创建新的节点；同一个
   `TypedElement` 描述可以被多次挂载，但不应保存旧的物理节点来实现复用。
 - 属性、事件、响应式 effect 和节点清理由传入的 `MountOwner` 管理；
   `silex_html` 不提供独立的 dispose API。
-- crate 使用 `web_sys` 的 HTML/SVG 类型。native 构建可以检查标签组合和
-  属性类型，但真实 mount、事件和浏览器对象访问需要 `wasm32` 环境。
+- `silex_html` 的公共标签和属性 API 不使用 `web_sys` concrete type；真实
+  browser mount、事件和浏览器对象访问由显式 `silex_dom::browser::BrowserDom`
+  adapter 提供，并需要 `wasm32` 环境。
 - `TypedElement` 带有 `'scope`，因此属性中的借用值和响应式值不能逃逸
   对应的 mount scope；不要把带 scope 的 view 当作 `'static` 配置保存。
 
@@ -186,7 +189,7 @@ let erased = typed.into_untyped().attr("value", "after-erasure");
 ## 当前限制
 
 - `silex_html` 只提供标签和属性 facade，不负责应用 host、runtime 或挂载
-  生命周期；这些行为由 `silex_dom` 提供。
+  生命周期；这些行为由 `silex_view` 和注入的 `silex_dom` backend 提供。
 - `FormAttributes`、`AnchorAttributes` 等七个语义 trait 只对带对应 marker 的
   `TypedElement` 提供方法；类型擦除后的 `Element`、`AnyView` 和通用组件应
   使用显式 `AttributeBuilder` 入口。

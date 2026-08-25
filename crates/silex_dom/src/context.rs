@@ -3,7 +3,7 @@ use std::rc::Rc;
 use crate::{
     attribute::{AttributeRequest, PropertyRequest},
     backend::{BackendId, DomBackend},
-    error::{DomError, DomResult},
+    error::DomResult,
     event::{PhysicalEventRequest, WindowEventRequest},
     host::HostResource,
     tree::{
@@ -31,6 +31,10 @@ impl DomContext {
         self.backend_id() == other.backend_id()
     }
 
+    pub fn validate_node(&self, node: &DomNode) -> DomResult<()> {
+        self.backend.check_node(node)
+    }
+
     pub fn document(&self) -> DomResult<DomDocument> {
         self.backend.document()
     }
@@ -46,12 +50,7 @@ impl DomContext {
     /// Convert an opaque node into an element handle after validating its
     /// backend identity and node kind.
     pub fn element(&self, node: &DomNode) -> DomResult<DomElement> {
-        if node.backend_id() != self.backend_id() {
-            return Err(DomError::CrossContext {
-                expected: self.backend_id().value(),
-                actual: node.backend_id().value(),
-            });
-        }
+        self.validate_node(node)?;
         DomElement::from_node(node.clone())
     }
 
@@ -131,6 +130,7 @@ impl DomContext {
     }
 
     pub fn focus(&self, element: &DomElement) -> DomResult<()> {
+        self.validate_node(element.node())?;
         self.backend.focus(element)
     }
 

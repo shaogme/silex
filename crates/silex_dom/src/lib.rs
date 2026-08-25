@@ -1,23 +1,12 @@
+pub mod attribute;
 pub mod backend;
 pub mod context;
 pub mod error;
+pub mod event;
 pub mod host;
 pub mod log;
 pub mod node_ref;
 pub mod tree;
-
-mod attribute_backend;
-mod event_backend;
-
-/// Low-level attribute/property request API.
-pub mod attribute {
-    pub use crate::attribute_backend::*;
-}
-
-/// Backend-neutral physical event API.
-pub mod event {
-    pub use crate::event_backend::*;
-}
 
 #[cfg(feature = "browser")]
 pub mod browser;

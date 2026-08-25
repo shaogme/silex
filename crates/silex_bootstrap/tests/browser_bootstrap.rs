@@ -3,17 +3,17 @@
 use silex_bootstrap::{
     BootstrapError, BrowserBootstrap, JsAppHost, LifecycleReporter, PageLifecyclePolicy,
 };
-use silex_core::{Runtime, SilexError, SilexResult};
+use silex_core::{Runtime, SilexError, SilexErrorKind, SilexResult};
 use silex_dom::CleanupSink;
 use silex_view::{Element, MountBuilderContext};
 use std::rc::Rc;
 use wasm_bindgen_test::*;
-use web_sys::{Element as DomElement, Node};
+use web_sys::{Document, Element as DomElement, Node, window};
 
 wasm_bindgen_test_configure!(run_in_browser);
 
-fn document() -> web_sys::Document {
-    web_sys::window()
+fn document() -> Document {
+    window()
         .expect("window is available")
         .document()
         .expect("document is available")
@@ -78,8 +78,10 @@ fn missing_id_is_reported_without_a_partial_controller() {
         Err(error) => error,
     };
     assert!(matches!(
-        error,
-        BootstrapError::TargetNotFound(id) if id == "missing-phase-four-target"
+        error.kind(),
+        SilexErrorKind::Bootstrap(bootstrap)
+            if matches!(bootstrap.as_ref(), BootstrapError::TargetNotFound(id)
+                if id == "missing-phase-four-target")
     ));
 }
 
@@ -124,7 +126,12 @@ fn non_manual_policy_cannot_transfer_listener_ownership_implicitly() {
         Ok(_) => panic!("non-manual controller must not transfer its listener"),
         Err(error) => error,
     };
-    assert!(matches!(error, BootstrapError::Lifecycle(message) if message.contains("Manual")));
+    assert!(matches!(
+        error.kind(),
+        SilexErrorKind::Bootstrap(bootstrap)
+            if matches!(bootstrap.as_ref(), BootstrapError::Lifecycle(message)
+                if message.contains("Manual"))
+    ));
     assert_eq!(target.child_nodes().length(), 0);
     detach(&target.into());
 }

@@ -7,8 +7,8 @@ use silex_dom::host::HostResource;
 use std::{borrow::Cow, cell::Cell, rc::Rc};
 
 pub use silex_dom::event::{
-    DomEvent, DomRectData, EventKind, EventKind as BackendEventKind, EventSpec,
-    EventSpec as BackendEventSpec, MouseEventData, PointerEventData, WindowEventRequest,
+    DomEvent, DomRectData, EventKind, EventSpec, MouseEventData, PointerEventData,
+    WindowEventRequest,
 };
 
 pub use silex_dom::event::EventDescriptor;
@@ -39,7 +39,7 @@ where
     }
 }
 
-/// 常用事件描述符。事件 payload 统一是 opaque [`DomEvent`]。
+/// 常用事件描述符。事件 payload 统一是 backend-neutral [`DomEvent`]。
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Event {
     name: &'static str,
@@ -120,10 +120,10 @@ where
     let request = PhysicalEventRequest::new(element, event.spec())
         .with_options(EventOptions::default())
         .with_bridge(bridge);
-    let resource: HostResource<'static> = context
-        .dom()
-        .listen(request)
-        .map_err(crate::error::dom_error)?;
+    let resource: HostResource<'static> = context.dom().listen(request)?;
+    // Register the lease first and the gate second. LocalOwnerState closes
+    // cleanups in reverse order, so the callback gate closes before the
+    // HostResource cancellation action removes the physical listener.
     owner.track_host_resource(resource, error_handler.handler_ref())?;
     owner.on_cleanup(
         Box::new(move || {
@@ -159,10 +159,9 @@ where
             })
     });
     let request = WindowEventRequest::new(event.spec()).with_bridge(bridge);
-    let resource: HostResource<'static> = context
-        .dom()
-        .listen_window(request)
-        .map_err(crate::error::dom_error)?;
+    let resource: HostResource<'static> = context.dom().listen_window(request)?;
+    // Window listeners currently rely on HostResource cancellation only; they
+    // do not share the element event's explicit View gate.
     owner.track_host_resource(resource, error_handler.handler_ref())
 }
 

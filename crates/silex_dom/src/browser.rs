@@ -11,7 +11,10 @@ use crate::{
     backend::{BackendId, DomBackend},
     context::DomContext,
     error::{DomError, DomResult},
-    event::{DomEvent, DomEventControl, MouseEventData, PhysicalEventRequest, WindowEventRequest},
+    event::{
+        DomEvent, DomEventControl, DomRectData, MouseEventData, PhysicalEventRequest,
+        PointerEventData, WindowEventRequest,
+    },
     host::HostResource,
     tree::{
         DomDocument, DomElement, DomNode, ElementSpec, InsertRequest, NodeKind, RangeMoveRequest,
@@ -60,16 +63,16 @@ impl DomEventControl for BrowserEventControl {
             .map(web_sys::KeyboardEvent::key)
     }
 
-    fn pointer_data(&self) -> Option<crate::event::PointerEventData> {
+    fn pointer_data(&self) -> Option<PointerEventData> {
         let event = self.event.dyn_ref::<web_sys::PointerEvent>()?;
-        Some(crate::event::PointerEventData::new(
+        Some(PointerEventData::new(
             event.client_x() as f64,
             event.client_y() as f64,
             event.pointer_id(),
         ))
     }
 
-    fn rect(&self) -> Option<crate::event::DomRectData> {
+    fn rect(&self) -> Option<DomRectData> {
         // A bubbling event may originate from a dynamically sized child. Layout
         // calculations for the listener must use the listener's own element.
         let target = self
@@ -78,7 +81,7 @@ impl DomEventControl for BrowserEventControl {
             .or_else(|| self.event.target())?;
         let element = target.dyn_into::<web_sys::Element>().ok()?;
         let rect = element.get_bounding_client_rect();
-        Some(crate::event::DomRectData::new(
+        Some(DomRectData::new(
             rect.top(),
             rect.left(),
             rect.width(),
@@ -155,18 +158,8 @@ impl BrowserDom {
     }
 
     pub fn from_web_sys_node(&self, node: Node) -> DomResult<DomNode> {
-        let kind = match node.node_type() {
-            1 => NodeKind::Element,
-            3 => NodeKind::Text,
-            8 => NodeKind::Comment,
-            9 => NodeKind::Document,
-            11 => NodeKind::Fragment,
-            _ => {
-                return Err(DomError::Unsupported {
-                    capability: "browser node kind",
-                });
-            }
-        };
+        self.backend.validate_document(&node)?;
+        let kind = BrowserBackend::kind(&node)?;
         Ok(self.backend.handle(node, kind))
     }
 }
@@ -183,19 +176,72 @@ impl BrowserBackend {
                 actual: node.backend_id().value(),
             });
         }
-        node.raw
+        let expected_kind = node.kind();
+        let node = node
+            .raw
             .as_ref()
             .downcast_ref::<BrowserHandle>()
             .map(|handle| handle.0.clone())
             .ok_or(DomError::InvalidHandle {
                 backend: self.id.value(),
-                kind: node.kind().label(),
-            })
+                kind: expected_kind.label(),
+            })?;
+        self.validate_document(&node)?;
+        if Self::kind(&node)? != expected_kind {
+            return Err(DomError::InvalidHandle {
+                backend: self.id.value(),
+                kind: "node kind metadata",
+            });
+        }
+        Ok(node)
     }
 
     fn handle(&self, node: Node, kind: NodeKind) -> DomNode {
         let identity = self.identity_for(&node);
         DomNode::from_raw_with_identity(self.id, kind, identity, Rc::new(BrowserHandle(node)))
+    }
+
+    fn kind(node: &Node) -> DomResult<NodeKind> {
+        match node.node_type() {
+            1 => Ok(NodeKind::Element),
+            3 => Ok(NodeKind::Text),
+            8 => Ok(NodeKind::Comment),
+            9 => Ok(NodeKind::Document),
+            11 => Ok(NodeKind::Fragment),
+            _ => Err(DomError::Unsupported {
+                capability: "browser node kind",
+            }),
+        }
+    }
+
+    fn document_node(&self) -> Node {
+        self.document.clone().into()
+    }
+
+    fn document_identity(&self) -> u64 {
+        self.identity_for(&self.document_node())
+    }
+
+    fn validate_document(&self, node: &Node) -> DomResult<()> {
+        let expected = self.document_node();
+        let actual_document = if node.node_type() == 9 {
+            Some(node.clone())
+        } else {
+            node.owner_document().map(Into::into)
+        };
+        let same_document = actual_document
+            .as_ref()
+            .is_some_and(|document| document.is_same_node(Some(&expected)));
+        if same_document {
+            return Ok(());
+        }
+        Err(DomError::CrossContext {
+            expected: self.document_identity(),
+            actual: actual_document.as_ref().map_or_else(
+                || self.identity_for(node),
+                |document| self.identity_for(document),
+            ),
+        })
     }
 
     fn identity_for(&self, node: &Node) -> u64 {
@@ -246,8 +292,12 @@ impl DomBackend for BrowserBackend {
         self.id
     }
 
+    fn check_node(&self, node: &DomNode) -> DomResult<()> {
+        self.validate_node(node).map(|_| ())
+    }
+
     fn document(&self) -> DomResult<DomDocument> {
-        let node = self.document.clone().unchecked_into::<Node>();
+        let node: Node = self.document.clone().into();
         DomDocument::from_node(self.handle(node, NodeKind::Document))
     }
 
@@ -272,7 +322,7 @@ impl DomBackend for BrowserBackend {
                 .create_element(spec.name())
                 .map_err(|error| Self::error("create_element", error))?,
         };
-        let node = self.handle(element.unchecked_into::<Node>(), NodeKind::Element);
+        let node = self.handle(element.into(), NodeKind::Element);
         DomElement::from_node(node)
     }
 
@@ -336,21 +386,18 @@ impl DomBackend for BrowserBackend {
     }
 
     fn parent(&self, node: &DomNode) -> DomResult<Option<DomNode>> {
-        Ok(self.validate_node(node)?.parent_node().map(|parent| {
-            let document_node = self.document.clone().unchecked_into::<Node>();
-            let kind = if parent.is_same_node(Some(&document_node)) {
-                NodeKind::Document
-            } else {
-                match parent.node_type() {
-                    1 => NodeKind::Element,
-                    3 => NodeKind::Text,
-                    8 => NodeKind::Comment,
-                    11 => NodeKind::Fragment,
-                    _ => NodeKind::Document,
-                }
-            };
-            self.handle(parent, kind)
-        }))
+        let parent = self.validate_node(node)?.parent_node();
+        parent
+            .map(|parent| {
+                let document_node: Node = self.document.clone().into();
+                let kind = if parent.is_same_node(Some(&document_node)) {
+                    NodeKind::Document
+                } else {
+                    Self::kind(&parent)?
+                };
+                Ok(self.handle(parent, kind))
+            })
+            .transpose()
     }
 
     fn children(&self, node: &DomNode) -> DomResult<Vec<DomNode>> {
@@ -358,13 +405,7 @@ impl DomBackend for BrowserBackend {
         let mut result = Vec::with_capacity(children.length() as usize);
         for index in 0..children.length() {
             if let Some(child) = children.item(index) {
-                let kind = match child.node_type() {
-                    1 => NodeKind::Element,
-                    3 => NodeKind::Text,
-                    8 => NodeKind::Comment,
-                    11 => NodeKind::Fragment,
-                    _ => NodeKind::Document,
-                };
+                let kind = Self::kind(&child)?;
                 result.push(self.handle(child, kind));
             }
         }
@@ -533,8 +574,13 @@ impl DomBackend for BrowserBackend {
     }
 
     fn focus(&self, element: &DomElement) -> DomResult<()> {
-        self.element(element.node())?
-            .dyn_into::<web_sys::HtmlElement>()
+        let node = self.node(element.node())?;
+        if !node.is_connected() {
+            return Err(DomError::Detached {
+                kind: NodeKind::Element.label(),
+            });
+        }
+        node.dyn_into::<web_sys::HtmlElement>()
             .map_err(|_| DomError::WrongNodeKind {
                 expected: "focusable html element",
                 actual: NodeKind::Element.label(),
@@ -561,9 +607,7 @@ impl DomBackend for BrowserBackend {
 
     fn listen(&self, request: &PhysicalEventRequest) -> DomResult<HostResource<'static>> {
         request.validate()?;
-        let target: EventTarget = self
-            .element(request.target.node())?
-            .unchecked_into::<EventTarget>();
+        let target: EventTarget = self.element(request.target.node())?.into();
         let name = request.spec.name().to_string();
         let spec = request.spec.clone();
         let target_node = request.target.node().clone();
@@ -612,10 +656,7 @@ impl DomBackend for BrowserBackend {
             .ok_or_else(|| Self::error("listen_window", JsValue::from_str("window unavailable")))?;
         let name = request.spec.name().to_string();
         let spec = request.spec.clone();
-        let target_node = self.handle(
-            self.document.clone().unchecked_into::<Node>(),
-            NodeKind::Document,
-        );
+        let target_node = self.handle(self.document.clone().into(), NodeKind::Document);
         let bridge = request.bridge.clone();
         let callback: Closure<dyn FnMut(Event)> =
             Closure::wrap_assert_unwind_safe(Box::new(move |event: Event| {
