@@ -76,8 +76,7 @@ RUN --mount=type=cache,target=/root/.cache/mise \
     echo "Pre-installing mise tools and Rust targets during docker build..."; \
     mise trust --all; \
     mise install rust; \
-    mise install; \
-    mise task run postinstall || true
+    mise install;
 
 # 2. Copy the rest of the workspace source code
 COPY . /root/workspace/

@@ -1,24 +1,55 @@
+[tool_config]
+locked = true
+
+[settings]
+minimum_release_age = "1h"
+
 [tools]
-"npm:@openai/codex" = "latest"
-node = "latest"
+node = { version = "latest", postinstall = "corepack enable" }
 python = "latest"
-rust = ["stable", "nightly"]
+rust = [
+    {
+        version = "stable",
+        components = ["rust-src"],
+        targets = ["wasm32-unknown-unknown"],
+    },
+    {
+        version = "nightly",
+        components = ["rust-src"],
+        targets = ["wasm32-unknown-unknown"],
+    },
+]
+
+# AI 工具
+"npm:@openai/codex" = {
+    version = "latest",
+    depends = ["node"],
+}
+"aqua:anomalyco/opencode" = {
+    version = "latest",
+}
+"aqua:google-antigravity/antigravity-cli" = {
+    version = "latest",
+}
+"aqua:anthropics/claude-code" = {
+    version = "latest",
+}
 
 # WebAssembly 工具
-"cargo:wasmi_cli" = "latest"
-"cargo:wasm-pack" = "latest"
-"cargo:wasm-bindgen-cli" = "latest"
+"cargo:wasmi_cli" = {
+    version = "latest",
+    depends = ["rust"],
+}
+"cargo:wasm-pack" = {
+    version = "latest",
+    depends = ["rust"],
+}
+"cargo:wasm-bindgen-cli" = {
+    version = "latest",
+    depends = ["rust"],
+}
 
 # 实用工具
 jq = "latest"
 ripgrep = "latest"
 gh = "latest"
-
-[tasks.postinstall]
-description = "为 stable 和 nightly 添加 wasm32 目标及源码组件"
-run = """
-rustup target add wasm32-unknown-unknown --toolchain stable 2>/dev/null || true
-rustup target add wasm32-unknown-unknown --toolchain nightly 2>/dev/null || true
-rustup component add rust-src --toolchain stable 2>/dev/null || true
-rustup component add rust-src --toolchain nightly 2>/dev/null || true
-"""

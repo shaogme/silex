@@ -66,9 +66,7 @@ if [ $CONFIG_FOUND -eq 1 ]; then
     echo "[mise-entrypoint] Found mise config ($FOUND_PATH). Initializing environment..."
     mise trust --all 2>/dev/null || true
     echo "[mise-entrypoint] Installing tools via mise..."
-    mise install rust || true
     mise install || true
-    mise task run postinstall || true
 
     # Check and synchronize Cargo dependencies if Cargo.lock has changed
     if [ -f "Cargo.lock" ]; then
