@@ -1,69 +1,118 @@
 +++
-title = "属性、事件与 NodeRef"
-description = "silex_dom 的低层 attribute/property/event request，以及 silex_view 的高层 binding 边界。"
-weight = 40
+title = "属性与 property"
+description = "silex_dom 的 attribute、property、class token 和 style 写入模型。"
+weight = 20
 +++
 
-# 属性、事件与 `NodeRef`
+# 属性与 property
 
-`silex_dom::model::attribute` 不构造高层属性 builder。它接收已经由
-`silex_view::attribute` 解析好的 `AttributeRequest`、`PropertyRequest` 和
-`AttributeValue`，把同一套操作交给 browser 或 SSR backend。
+`silex_dom` 有意把 HTML attribute、DOM property 和 style property 分成三条写入
+路径。这样 SSR serializer 不会把只能存在于运行时对象上的 property 错误写进
+HTML，也避免调用方通过一个模糊的字符串接口绕过安全的值模型。
 
-## 两层 API
+本文的片段省略外层函数，只展示真实类型和 `Result` 传播；它们不是独立可编译的
+CI 示例。
 
-```text
-silex_view::AttributeBuilder
-  attr / prop / class / style / on / node_ref
-                │
-                ▼
-silex_dom::model::attribute::AttributeRequest
-  AttributeTarget + AttributeValue
-                │
-                ▼
-        DomContext::set_attribute
-```
+## AttributeTarget 与 AttributeValue
 
-attribute、property、class 和 style 必须使用正确目标。`Removed`、空值和
-字符串值的语义由 `AttributeValue` 表达；class token 更新只删除当前 binding
-贡献的 token，不会破坏其它属性来源。
+`AttributeTarget` 有三个稳定入口：`Named(String)`、`Class` 和 `Style`。推荐使用
+`AttributeTarget::named(name)` 创建普通属性；`Class` 和 `Style` 会分别映射为
+`class`、`style`。
 
-高层应用示例：
+`AttributeValue` 只有四种形式：
+
+| 值 | 语义 |
+| --- | --- |
+| `Removed` | 删除 attribute。 |
+| `Empty` | 保留 attribute，但值为空字符串。 |
+| `Text(String)` | 写入普通文本值，可用 `AttributeValue::text` 创建。 |
+| `ClassTokens { add, remove }` | 增加或删除 class token，不接受 raw HTML。 |
 
 ```rust
-use silex_view::attribute::{AttributeBuilder, GlobalAttributes};
-use silex_view::Element;
+context.set_attribute(AttributeRequest::new(
+    &element,
+    AttributeTarget::named("data-state"),
+    AttributeValue::text("ready"),
+))?;
 
-let view = Element::with_child("button", "save")
-    .attr("data-state", "ready")
-    .class("primary");
+context.set_attribute(AttributeRequest::new(
+    &element,
+    AttributeTarget::Class,
+    AttributeValue::ClassTokens {
+        add: vec![String::from("active")],
+        remove: vec![String::from("stale")],
+    },
+))?;
 ```
 
-## 事件与 SSR omission
+browser backend 对 `ClassTokens` 使用 `DomTokenList`；SSR backend 使用
+`BTreeSet` 合并 token，因此 SSR 的 class 输出是去重且稳定排序的。该排序行为
+是 SSR 实现细节，不应作为 browser `classList` 的顺序契约。
 
-`silex_dom::model::event::EventSpec` 只描述名称、类别、bubbles 和 cancelable；
-browser concrete event 类型以及 owner-bound callback 位于 `silex_view::event`。
-SSR listener 注册是 inert 的：serialization 永远不生成 `onclick` 或其它
-事件 attribute，而 `SsrDom::hydration_records()` 记录目标 backend、稳定节点
-identity 和 `EventSpec`。
+`ClassTokens` 在 browser backend 固定操作 `classList`，而 SSR backend 按
+`AttributeTarget::name()` 更新属性。因此调用方应始终把 `ClassTokens` 与
+`AttributeTarget::Class` 配对；当前类型模型没有阻止把它传给 named target，
+这会造成 browser 与 SSR 语义不一致。
 
-这使静态 HTML 与 hydration metadata 分离，也避免把闭包或 `web_sys` 值序列化。
-事件 record 的 target 必须来自同一 `DomContext`；跨 backend 操作返回结构化
-`DomError::CrossContext`。
+`AttributeRequest` 会 clone `DomElement`，但不会 clone backend DOM 节点本身或触发
+写入。真正写入由 `DomContext::set_attribute` 委托给 backend，并在错误时返回
+`DomResult<()>`。
 
-## `NodeRef`
+## PropertyValue 与 SSR
 
-`silex_dom::lifecycle::node_ref::NodeRef<'scope>` 只保存抽象 `DomNode`，不暴露 browser
-对象。`silex_view::GlobalEventAttributes::node_ref` 在 mount 后 set，在 owner
-cleanup 时 clear。NodeRef 的生命周期不能超过当前 mount scope；跨 scope 保存
-会被 trybuild 拒绝。SSR、browser 和 rollback 都必须验证成功 mount 期间可读，
-builder 失败或 dispose 后为空。
+`PropertyRequest` 的值通过 `PropertyValue` 表示：`Removed`、`String`、`Bool` 或
+`Number(f64)`。browser backend 使用 JavaScript `Reflect::set`/`delete_property`
+操作 element object；SSR backend 则把 property 保存在内存节点状态中。
 
-## staging 与 commit
+property 不进入 SSR HTML。比如把 `value` 写成 property 不会产生
+`value="..."`；若值必须出现在初始 markup 中，应显式发送
+`AttributeRequest`。这一区分也是 hydration 时避免把运行时对象状态伪装成
+服务器输出的依据。
 
-低层 request 本身不假设真实 document 已连接。高层 `AttrOp::custom` 在
-staging 阶段运行，`AttrOp::on_commit` 只用于需要提交后物理状态的操作。错误
-由 `DomError` 转为 `SilexErrorKind::Dom`，由当前 View owner 的 handler 报告。
+```rust
+context.set_property(PropertyRequest::new(
+    &element,
+    "value",
+    PropertyValue::string("runtime value"),
+))?;
+```
 
-相关源码：`silex_dom/src/model/attribute.rs`、`silex_dom/src/model/event.rs`、
-`silex_view/src/attribute.rs`、`silex_dom/src/lifecycle/node_ref.rs`。
+`get_attribute` 是独立的读取能力：browser backend 从真实 `Element` 读取并返回
+`Option<String>`；当前 SSR backend 没有实现该可选能力，会返回
+`DomError::Unsupported`。SSR 中若需要验证输出，应读取 `serialize` 或
+`serialize_node` 的结果，而不是把 property 状态当作 attribute 查询结果。
+
+属性名或 property 名为空时返回 `DomError::AttributeNameEmpty`。调用方应在进入
+DOM 层之前完成业务层的名称选择，不要依赖 backend 接受空名称。
+
+## Style property
+
+`DomContext::set_style_property(element, name, value)` 直接操作 element 的
+`style` 对象；`Some(value)` 设置属性，`None` 删除属性。browser 仅支持具有
+`HtmlElement` 或 `SvgElement` style 对象的元素；其他 element 会返回
+`Unsupported`。
+
+SSR 会读取当前 `style` attribute，把声明拆成 map，更新或删除目标声明，再写回
+带分号的 style 字符串。SSR 的 map 是 `BTreeMap`，所以输出顺序稳定；非法或不含
+冒号的现有声明不会被保留。
+
+```rust
+context.set_style_property(&element, "--accent", Some("blue"))?;
+context.set_style_property(&element, "--accent", None)?;
+```
+
+## 安全与错误边界
+
+`AttributeValue` 没有 raw-HTML 变体。serializer 对 text 和 attribute 值分别做
+HTML 转义，因此不要把已经转义的字符串再次当作结构化 markup 传入；若确实要
+注入 HTML，必须在更高层明确承担对应的安全和 hydration 风险，不能通过本 API
+绕过检查。
+
+所有请求都带有 `DomElement`，backend 会验证它属于当前 backend。跨 context、
+错误节点类别、backend JavaScript 异常和不支持的 style 能力都会结构化为
+`DomError`，而不是静默忽略。
+
+对应实现和测试：`src/model/attribute.rs`、
+`src/adapters/browser/attribute.rs`、`src/adapters/ssr/attribute.rs`、
+`tests/ssr/attributes.rs`。上层响应式 attribute builder 的调用方式见
+[`silex_view` 文档](@/developer/crates/silex_view/_index.md)。

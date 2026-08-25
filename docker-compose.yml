@@ -30,20 +30,38 @@ services:
       - mise-cache:/root/.cache/mise
       # Persist codex configuration
       - codex-config:/root/.codex
+      - gemini-config:/root/.gemini
+      - opencode-config:/root/.config/opencode
+      - claude-config:/root/.claude
 
   # Standalone mode: Uses code copied into the image (No host mounting)
   standalone:
     <<: *app-base
     container_name: silex-standalone
     volumes:
+      # Mount host source code
+      - .:/root/workspace
+      # Isolate Rust build artifacts inside a dedicated named Docker volume (high-performance Linux ext4)
+      - rust-target:/root/workspace/target
+      # Persist Cargo dependencies, crate index, and git checkouts
       - cargo-cache:/root/.cargo
+      # Persist mise tools and cache
+      - mise-data:/root/.local/share/mise
+      - mise-cache:/root/.cache/mise
+      # Persist codex configuration
       - codex-config:/root/.codex
+      - gemini-config:/root/.gemini
+      - opencode-config:/root/.config/opencode
+      - claude-config:/root/.claude
     profiles:
       - standalone
 
 volumes:
-  codex-config:
   rust-target:
   cargo-cache:
   mise-data:
   mise-cache:
+  codex-config:
+  gemini-config:
+  opencode-config:
+  claude-config:

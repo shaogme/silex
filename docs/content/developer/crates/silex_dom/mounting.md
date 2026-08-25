@@ -1,63 +1,45 @@
 +++
-title = "挂载事务与回滚"
-description = "silex_view MountedApp 使用 silex_dom backend 的 staging、commit、rollback 和 dispose。"
-weight = 20
+title = "挂载边界与清理"
+description = "说明 silex_dom 提供的低层挂载原语，以及实际 mount 事务所属的上层。"
+weight = 85
 +++
 
-# 挂载事务与回滚
+# 挂载边界与清理
 
-应用级挂载由 `silex_view::MountedApp` 管理；`silex_dom` 只提供节点和树操作。
-新版 `MountedApp::new` 接收 `(Runtime, DomContext, host: DomNode, CleanupSink)`，
-因此 browser/SSR 只通过 context 注入，不需要公共签名携带 `web_sys`。
+本页是跨 crate 导航入口：`silex_dom` 本身没有 `mount` 或 `dispose` 函数。实际
+的应用挂载事务在 `silex_view::MountedApp`、`MountContext` 和 owner 中完成；
+`silex_dom` 只提供 mount glue 使用的低层原语。
 
-## 边界与状态
+## `silex_dom` 提供什么
 
-```text
-Ready ── mount builder ──► Mounting ── commit ──► Mounted
-  ▲                         │                      │
-  └──── retryable error ◄────┘                dispose
-                                  │              │
-                                  └── cleanup ────┘
-                         rollback failure ──► Poisoned
-```
+- `DomContext`：在显式 backend 中创建和更新节点；
+- `InsertRequest`、`RangeRequest`、`DomRange`：组织连续节点和 branch；
+- `AttributeRequest`、`PropertyRequest`：写入 DOM 状态；
+- `PhysicalEventRequest`、`HostResource`：安装并取消 listener；
+- `NodeRef`、`NodeRefBinding`：让 mount cleanup 按 generation 清除当前 binding；
+- `CleanupReport`、`CleanupSink`：保留 cleanup failure 和 boundary error。
 
-builder 期间节点先进入 detached staging fragment。只有 builder 成功且事务
-提交后，owned nodes 才追加到 caller-owned host；host 中原有节点不会被删除。
-builder 错误会关闭 provisional owner、撤销 Attribute/事件/NodeRef，并清空
-staging。cleanup report 为空时可重试，否则句柄进入 poisoned 状态。
+这些 API 是单步、显式、可返回错误的操作。它们不会知道某个 View 是否已经
+commit，也不会自动逆序执行之前的 mutation。
 
-## builder 与 View context
+## 上层事务责任
 
-应用 builder 使用 `silex_view::MountBuilderContext`：
+上层 mount 实现应在 provisional 阶段记录：
 
-```rust
-app.mount(|context| {
-    let handler = context.access().error_handler(|_| {})?;
-    context.mount_unit(
-        silex_view::Element::with_child("main", "content"),
-        handler,
-    )
-})?;
-```
+1. 创建的 owner 和响应式资源；
+2. 插入的 DOM 节点和连续 range；
+3. NodeRef binding 与 generation；
+4. listener 的 `HostResource`；
+5. 需要恢复或移除的属性/property 状态和错误 handler；`silex_dom` 本身不会为
+   attribute/property 写入自动生成 cleanup。
 
-`MountBuilderContext` 和 View kernel 的 `silex_view::MountContext` 是不同语义：
-前者提供应用 host/access，后者提供单个 View 的 target/ancestry/transaction。
+只有所有初始化步骤成功后才提交；任一步返回 `DomError` 或上层错误时，应按
+上层事务规则 rollback，并把清理失败保留在 report 中。不要把 `HostResource::finish`
+当作 listener 的移除，它只丢弃取消闭包；正常 rollback/dispose 应调用 `cancel()`。
 
-## SSR 与 browser
+## 继续阅读
 
-SSR 用 `silex_dom::adapters::ssr::SsrDom::new()` 建立内存 document，browser 用
-`silex_dom::adapters::browser::BrowserDom::from_window()` 或显式
-`BrowserDom::new(document)`。两者都可以
-注入相同的 `DomContext`，但 node 不能跨 backend 混用。SSR serialization 只
-输出树与安全属性；listener 进入 hydration record，不进入 HTML。
-
-## 验收重点
-
-- caller-owned host 节点在 mount、remount、dispose 后保持不变；
-- builder 失败后 primary error、rollback report 和 retry/poison 状态可区分；
-- rollback 清除 provisional owner、DOM、NodeRef、事件 record 所对应的实际树；
-- dispose 可重复调用；
-- `MountInstance` 不能逃逸当前 scope。
-
-实现和测试位于 `crates/silex_view/src/mounted.rs`、
-`crates/silex_view/tests/ssr_mount.rs` 与 `crates/silex_dom/src/adapters/ssr.rs`。
+- [View 与 mount 的上层边界](views.md)
+- [`silex_view` 总览](@/developer/crates/silex_view/_index.md)
+- [生命周期与 NodeRef](lifecycle.md)
+- [错误模型](errors.md)

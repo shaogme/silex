@@ -85,3 +85,8 @@ required-features = ["ssr"]
 name = "ssr"
 path = "tests/ssr.rs"
 required-features = ["ssr"]
+
+[[test]]
+name = "docs_examples"
+path = "tests/docs_examples.rs"
+required-features = ["ssr"]
