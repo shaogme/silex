@@ -3,9 +3,6 @@ extern crate self as silex;
 pub mod core {
     pub use silex_core::*;
 }
-pub mod dom {
-    pub use silex_dom::*;
-}
 pub mod macros {
     pub use silex_macros::*;
 }

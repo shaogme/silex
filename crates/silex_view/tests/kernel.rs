@@ -1,7 +1,6 @@
 use silex_core::reactivity::Signal;
 use silex_core::{ReactiveError, Runtime, RxGet, SilexError, SilexErrorKind};
-use silex_dom::error::CleanupSink;
-use silex_dom::ssr::SsrDom;
+use silex_dom::{adapters::ssr::SsrDom, lifecycle::CleanupSink};
 use silex_view::attribute::{AttributeBuilder, GlobalAttributes, GlobalEventAttributes};
 use silex_view::dynamic::{BranchEvaluation, DynamicRenderer};
 use silex_view::element::{Element, Tag, TagMetadata, TagNamespace, TypedElement};

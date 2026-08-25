@@ -4,7 +4,7 @@ use silex_core::{
     DomError, EffectPhase, ErrorHandlerInput, ErrorHandlerToken, OwnerAccess, ReadSignal, Runtime,
     RxGet, SilexContext, SilexError, SilexErrorKind, SilexResult,
 };
-use silex_dom::browser::BrowserDom;
+use silex_dom::adapters::browser::BrowserDom;
 use silex_router::macros::router;
 use silex_router::{
     Link, Navigator, RouteEntry, RoutePath, RouteTable, Router, RouterContext, RouterContextProps,

@@ -1,8 +1,8 @@
 use crate::css::AppTheme;
 use gloo_timers::future::TimeoutFuture;
 use silex::core::TaskHandle;
-use silex::dom::DomError;
-use silex::{dom::log::console_log, prelude::*};
+use silex::dom::diagnostics::{DomError, logging::console_log};
+use silex::prelude::*;
 use std::rc::Rc;
 
 #[component]
@@ -287,7 +287,8 @@ fn focus_status(error: &SilexError) -> String {
 #[cfg(test)]
 mod tests {
     use super::focus_status;
-    use silex::{SilexError, dom::DomError};
+    use silex::SilexError;
+    use silex::dom::diagnostics::DomError;
 
     #[test]
     fn focus_status_preserves_capability_failure_categories() {

@@ -5,7 +5,7 @@ use silex_bootstrap::{
     PageLifecyclePolicy, UnmountOutcome,
 };
 use silex_core::{Runtime, SilexError, SilexErrorKind, SilexResult, ViewError};
-use silex_dom::CleanupSink;
+use silex_dom::lifecycle::CleanupSink;
 use silex_view::{Element, MountBuilderContext};
 use std::{
     cell::{Cell, RefCell},

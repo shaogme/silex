@@ -17,7 +17,7 @@ CSS 字符串相等，不能覆盖 owner dispose、动态 rule 替换或样式�
 | `src/**` 单元测试 | escape、layer、class、builder render、类型值、theme diff、template | native |
 | `runtime/registry.rs` 测试 | 静态 chunk、顶层规则切分、延迟队列和样式表状态机 | native fake backend |
 | `tests/css_type_safety.rs` + `tests/ui/` | 属性值能力、量纲、owner scope、旧 API 和错误诊断 | native trybuild |
-| `tests/owner.rs` | inline value、theme、dynamic class、global style、owner cleanup | wasm browser |
+| `tests/fallback.rs` | inline value、theme、dynamic class、global style、owner cleanup | wasm browser |
 | `tests/fallback.rs` | 强制 `<style>` 后端、复用、更新和 dispose | wasm browser + `test-style-fallback` |
 | `tests/docs_examples.rs` | `docs/examples/silex_css/basic.rs` 编译并执行 | native |
 | `crates/tests/silex_macros_test/` | `css!`、`styled!`、`global!`、`classes!`、`inject_css!`、`theme!`、`tw!` 和 variant 宏的展开及 UI 契约 | native trybuild/unit |
@@ -50,10 +50,10 @@ RUSTFLAGS='-D warnings' cargo test -p silex_css --tests \
     --target wasm32-unknown-unknown --no-run
 ```
 
-浏览器 runner 可用时，运行 owner 测试：
+浏览器 runner 可用时，运行 fallback 测试：
 
 ```text
-RUSTFLAGS='-D warnings' cargo test -p silex_css --test owner \
+RUSTFLAGS='-D warnings' cargo test -p silex_css --test fallback \
     --target wasm32-unknown-unknown
 ```
 

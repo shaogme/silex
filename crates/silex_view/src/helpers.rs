@@ -4,8 +4,10 @@ use crate::context::MountContext;
 use crate::event::{EventDescriptor, EventHandler, bind_event};
 use crate::owner::MountOwnerToken;
 use silex_core::{ErrorHandlerInput, SilexResult};
-use silex_dom::event::DomEvent;
-use silex_dom::{DomContext, DomDocument, DomElement, DomNode};
+use silex_dom::{
+    model::{DomDocument, DomElement, DomNode, event::DomEvent},
+    runtime::DomContext,
+};
 
 /// 从显式 DOM context 获取 document。
 pub fn document(context: &DomContext) -> SilexResult<DomDocument> {

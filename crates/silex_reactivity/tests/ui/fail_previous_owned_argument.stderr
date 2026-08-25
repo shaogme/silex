@@ -1,4 +1,4 @@
-error[E0277]: expected a `FnMut(Option<&_>)` closure, found `ErrorHandlerToken<'_, _>`
+error[E0277]: expected an `FnMut(Option<&_>)` closure, found `ErrorHandlerToken<'_, _>`
   --> tests/ui/fail_previous_owned_argument.rs:8:13
    |
  6 |           let _ = scope.effect_with_previous(

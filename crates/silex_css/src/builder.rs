@@ -10,7 +10,7 @@ use crate::{
     },
 };
 use silex_core::{EffectPhase, ErrorReporter, Rx, RxGet, SilexContextProvider, SilexResult};
-use silex_dom::{
+use silex_dom::model::{
     DomElement,
     attribute::{AttributeRequest, AttributeTarget, AttributeValue},
 };

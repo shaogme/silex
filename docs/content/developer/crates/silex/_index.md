@@ -40,7 +40,7 @@ sort_by = "weight"
 | `silex::components` | `ErrorBoundary`、`Portal`、`Suspense` 以及 CSS feature 下的布局组件。 |
 | `silex::flow` | `Show`、`Dynamic`、`Switch`、`Index`、`For` 和 `ForStateful`。 |
 | `silex::ui` | Tailwind feature 下的 shadcn 风格 UI 组件和主题辅助函数。 |
-| `silex::core` / `silex::dom` / `silex::html` / `silex::css` | 直接访问被 facade 包装的底层 crate。 |
+| `silex::core` / `silex::html` / `silex::css` | 直接访问被 facade 包装的高层 crate；低层 DOM 请直接使用 `silex::dom` 分组入口。 |
 | `silex::macros` | 过程宏 crate 的显式命名空间；常用宏也在 `prelude` 中。 |
 | `silex::router` / `silex::hash` | 路由与哈希工具的 facade。 |
 | `silex::bootstrap` | `bootstrap` feature 下的应用宿主和浏览器入口。 |
@@ -67,7 +67,7 @@ UI 组件不通过 `prelude` 的 glob 导出，以免和 flow 中的 `Switch` �
 {{ ("```rust\n" ~ source ~ "\n```") | markdown | safe }}
 
 示例由 `crates/silex/tests/docs_examples.rs` 编译并执行。真正的浏览器挂载还需要
-`silex_bootstrap::AppHost`/`BrowserBootstrap` 或 `silex_dom::MountedApp`；native
+`silex_bootstrap::AppHost`/`BrowserBootstrap` 或 `silex_view::MountedApp`；native
 示例不能证明浏览器 DOM、CSSOM 或事件行为。
 
 ## 典型调用链与生命周期

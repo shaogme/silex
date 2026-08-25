@@ -2,7 +2,7 @@
 
 use gloo_timers::future::TimeoutFuture;
 use silex_core::{ErrorHandlerInput, ErrorHandlerToken, OwnerAccess, Runtime, RxGet, SilexContext};
-use silex_dom::browser::BrowserDom;
+use silex_dom::adapters::browser::BrowserDom;
 use silex_i18n::{Catalog, I18nBuilder, Locale, detect_browser_locale, t};
 #[cfg(feature = "intl")]
 use silex_i18n::{DateTimeFormat, format_number};

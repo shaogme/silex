@@ -3,7 +3,7 @@ use crate::{
     source::{CssSource, IntoCssSource},
 };
 use silex_core::{EffectPhase, RxGet, SilexError, SilexErrorKind, SilexResult};
-use silex_dom::{DomContext, DomElement};
+use silex_dom::{model::DomElement, runtime::DomContext};
 use silex_view::{
     MountContext, MountErrorHandler, MountOwner,
     attribute::{ApplyTarget, ApplyToDom, AttrOp, IntoStorable},

@@ -7,7 +7,7 @@ weight = 30
 # 生命周期与宿主资源
 
 owner/mount 生命周期属于 `silex_view`；物理 listener、timer、animation frame
-等资源属于 `silex_dom::host::HostResource`。View owner 只保存注册和清理能力，
+等资源属于 `silex_dom::runtime::HostResource`。View owner 只保存注册和清理能力，
 不重新定义 browser handle。
 
 ## 关闭顺序
@@ -23,7 +23,7 @@ View child owner close
         └─ HostResource cancel（最多一次）
 ```
 
-cleanup 错误进入 `silex_dom::error::CleanupReport`；primary mount error、
+cleanup 错误进入 `silex_dom::lifecycle::CleanupReport`；primary mount error、
 `MountError`、`RollbackError` 和 `DisposeError` 由 `silex_view::error` 管理。
 两个报告不能混为一个 backend error。
 
@@ -55,5 +55,5 @@ feature 的上层 crate。`silex_dom` 不再提供全局 `document()` 或
 - rollback 后 NodeRef 为空、staging tree 为空，且可重试的 `MountedApp` 未 poison；
 - SSR 不引入 `web_sys` runtime，也不注册真实 listener。
 
-相关源码：`silex_dom/src/host.rs`、`silex_dom/src/error.rs`、
+相关源码：`silex_dom/src/runtime/host.rs`、`silex_dom/src/lifecycle/cleanup.rs`、
 `silex_view/src/owner.rs`、`silex_view/src/mounted.rs`。

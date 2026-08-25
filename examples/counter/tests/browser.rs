@@ -2,7 +2,7 @@
 
 use gloo_timers::future::TimeoutFuture;
 use silex::bootstrap::{AppHost, HostState};
-use silex::dom::CleanupSink;
+use silex::dom::lifecycle::CleanupSink;
 use silex::reexports::wasm_bindgen::{JsCast, JsValue};
 use silex::reexports::web_sys::{self, Document, Element as DomElement, HtmlElement, Node};
 use silex::view::{Element, MountBuilderContext, ViewError};

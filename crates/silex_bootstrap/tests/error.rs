@@ -1,6 +1,6 @@
 use silex_bootstrap::AppHostError;
 use silex_core::{BootstrapError, CloseError, Runtime, SilexError, SilexErrorKind};
-use silex_dom::{CleanupFailure as DomCleanupFailure, CleanupOrigin, CleanupReport};
+use silex_dom::lifecycle::{CleanupFailure as DomCleanupFailure, CleanupOrigin, CleanupReport};
 use silex_view::{DisposeError, MountError};
 
 fn cleanup_error() -> CloseError {

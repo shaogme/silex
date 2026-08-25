@@ -14,8 +14,11 @@ use crate::{
 };
 use silex_core::{EffectPhase, ErrorReporter, Rx, RxGet, SilexError, SilexErrorKind, SilexResult};
 use silex_dom::{
-    DomContext, DomElement,
-    attribute::{AttributeRequest, AttributeTarget, AttributeValue},
+    model::{
+        DomElement,
+        attribute::{AttributeRequest, AttributeTarget, AttributeValue},
+    },
+    runtime::DomContext,
 };
 use silex_view::{
     AttrOp as ViewAttrOp, MountContext as ViewMountContext,

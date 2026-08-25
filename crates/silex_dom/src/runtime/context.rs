@@ -1,15 +1,20 @@
 use std::rc::Rc;
 
 use crate::{
-    attribute::{AttributeRequest, PropertyRequest},
-    backend::{BackendId, DomBackend},
-    error::DomResult,
-    event::{PhysicalEventRequest, WindowEventRequest},
-    host::HostResource,
-    tree::{
-        DomDocument, DomElement, DomNode, DomRange, ElementSpec, InsertRequest, RangeMoveRequest,
-        RangeRequest,
+    diagnostics::error::DomResult,
+    model::{
+        attribute::{AttributeRequest, PropertyRequest},
+        event::{PhysicalEventRequest, WindowEventRequest},
+        identity::BackendId,
+        node::{DomDocument, DomElement, DomNode, ElementSpec},
     },
+};
+
+use super::{
+    backend::DomBackend,
+    host::HostResource,
+    range::DomRange,
+    tree::{InsertRequest, RangeMoveRequest, RangeRequest},
 };
 
 /// Explicitly injected, cheaply cloneable DOM context.

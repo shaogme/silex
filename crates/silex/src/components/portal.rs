@@ -1,8 +1,10 @@
 use silex_core::{EffectPhase, RxReadRef, SilexError, SilexErrorKind, SilexResult, reactivity::Rx};
 use silex_dom::{
-    DomContext, DomElement, DomNode,
-    attribute::{AttributeRequest, AttributeTarget, AttributeValue},
-    tree::ElementSpec,
+    model::{
+        DomElement, DomNode, ElementSpec,
+        attribute::{AttributeRequest, AttributeTarget, AttributeValue},
+    },
+    runtime::DomContext,
 };
 use silex_macros::component;
 use silex_view::{

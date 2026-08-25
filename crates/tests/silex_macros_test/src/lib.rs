@@ -9,10 +9,6 @@ pub mod css {
     pub use silex_css::*;
 }
 
-pub mod dom {
-    pub use silex_dom::*;
-}
-
 pub mod html {
     pub use silex_html::*;
 }

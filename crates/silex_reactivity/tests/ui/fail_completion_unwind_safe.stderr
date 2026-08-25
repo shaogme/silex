@@ -13,6 +13,9 @@ error[E0277]: the type `UnsafeCell<Vec<i32>>` may contain interior mutability an
    = help: within `RefCell<Vec<i32>>`, the trait `RefUnwindSafe` is not implemented for `UnsafeCell<Vec<i32>>`
 note: required because it appears within the type `RefCell<Vec<i32>>`
   --> $RUST/core/src/cell.rs
+   |
+   | pub struct RefCell<T: ?Sized> {
+   |            ^^^^^^^
    = note: required for `Rc<RefCell<Vec<i32>>>` to implement `UnwindSafe`
 note: required because it's used within this closure
   --> tests/ui/fail_completion_unwind_safe.rs:9:47
@@ -43,8 +46,14 @@ error[E0277]: the type `UnsafeCell<isize>` may contain interior mutability and a
    = help: within `RefCell<Vec<i32>>`, the trait `RefUnwindSafe` is not implemented for `UnsafeCell<isize>`
 note: required because it appears within the type `Cell<isize>`
   --> $RUST/core/src/cell.rs
+   |
+   | pub struct Cell<T: ?Sized> {
+   |            ^^^^
 note: required because it appears within the type `RefCell<Vec<i32>>`
   --> $RUST/core/src/cell.rs
+   |
+   | pub struct RefCell<T: ?Sized> {
+   |            ^^^^^^^
    = note: required for `Rc<RefCell<Vec<i32>>>` to implement `UnwindSafe`
 note: required because it's used within this closure
   --> tests/ui/fail_completion_unwind_safe.rs:9:47

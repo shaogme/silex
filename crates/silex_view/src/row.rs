@@ -5,8 +5,11 @@ use silex_core::{
     CloseError, ClosePhase, CloseSource, CloseTransaction, EffectPhase, OwnerChild, ReactiveError,
     SilexError, SilexErrorKind, SilexResult,
 };
-use silex_dom::tree::InsertRequest;
-use silex_dom::{DomContext, DomError, DomNode, DomRange, NodeKind, RangeRequest};
+use silex_dom::{
+    diagnostics::DomError,
+    model::{DomNode, NodeKind},
+    runtime::{DomContext, DomRange, InsertRequest, RangeRequest},
+};
 use std::{
     cell::{Cell, RefCell},
     panic::{AssertUnwindSafe, catch_unwind, resume_unwind},

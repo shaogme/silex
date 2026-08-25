@@ -1,15 +1,10 @@
-//! DOM 和宿主清理错误。
-//!
-//! View mount 状态错误位于 `silex_view::error`；本模块只描述低层 DOM 错误和
-//! 清理诊断，避免 DOM backend 反向知道 View 生命周期。
+//! DOM 清理失败和 drop 阶段诊断。
 
-use crate::log::console_error;
+use crate::diagnostics::logging::console_error;
 use silex_core::{CleanupDiagnostic, SilexError};
 use std::rc::Rc;
 
-pub use silex_core::error::dom::{
-    CleanupFailure, CleanupOrigin, CleanupReport, DomError, DomResult,
-};
+pub use silex_core::error::dom::{CleanupFailure, CleanupOrigin, CleanupReport};
 
 /// Drop 阶段将 `CloseError` 转换成的结构化诊断。
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -99,6 +94,7 @@ impl CleanupSink {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use silex_core::CloseError;
     use std::{cell::RefCell, rc::Rc};
 
     #[test]
@@ -110,7 +106,7 @@ mod tests {
         });
         let diagnostic = CleanupFailureDiagnostic::new(
             CleanupOrigin::Root,
-            silex_core::CloseError::from_panic(Box::new("drop failure")).into_diagnostic(),
+            CloseError::from_panic(Box::new("drop failure")).into_diagnostic(),
         );
 
         sink.record(DropFailureReport::from_parts(vec![diagnostic], Vec::new()));

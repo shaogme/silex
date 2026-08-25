@@ -1,7 +1,11 @@
 #![cfg(target_arch = "wasm32")]
 
 use silex_core::{ErrorHandlerToken, ErrorReporter, OwnerAccess, Runtime, SilexResult};
-use silex_dom::{ElementSpec, browser::BrowserDom};
+use silex_dom::{
+    adapters::browser::BrowserDom,
+    model::{DomNode, ElementSpec},
+    runtime::DomContext,
+};
 use silex_html::{a, svg_a};
 use silex_view::{MountContext, MountInstance, MountOwnerToken, View};
 use wasm_bindgen_test::*;
@@ -13,7 +17,7 @@ fn browser() -> BrowserDom {
     BrowserDom::from_window().expect("browser DOM should be available")
 }
 
-fn host(dom: &silex_dom::DomContext) -> (silex_dom::DomNode, Element) {
+fn host(dom: &DomContext) -> (DomNode, Element) {
     let body = dom
         .document_body()
         .expect("browser document body lookup should succeed")
@@ -42,8 +46,8 @@ fn error_handler<'owner>(owner: OwnerAccess<'owner>) -> ErrorHandlerToken<'owner
 fn mount_view<'owner, V: View<'owner>>(
     view: &V,
     owner: &MountOwnerToken<'owner>,
-    dom: &silex_dom::DomContext,
-    parent: &silex_dom::DomNode,
+    dom: &DomContext,
+    parent: &DomNode,
     error_handler: ErrorReporter<'owner>,
 ) -> SilexResult<MountInstance<'owner>> {
     let context =

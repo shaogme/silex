@@ -1,4 +1,4 @@
-use crate::tree::DomElement;
+use crate::model::node::handle::DomElement;
 
 /// Physical target of an attribute write. Class and style remain attributes;
 /// properties are represented by `PropertyRequest` and never serialized as

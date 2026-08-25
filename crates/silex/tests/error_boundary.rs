@@ -7,7 +7,7 @@ use silex_core::{
     EffectPhase, ErrorHandlerInput, ErrorHandlerToken, ErrorReporter, OwnerAccess, ReadSignal,
     Runtime, RxGet, SilexContext, SilexError, SilexErrorKind, SilexResult,
 };
-use silex_dom::browser::BrowserDom;
+use silex_dom::adapters::browser::BrowserDom;
 use silex_view::{MountContext, MountInstance, MountOwnerToken, View};
 use wasm_bindgen_test::*;
 

@@ -2,4 +2,6 @@ error[E0432]: unresolved import `silex_reactivity::EffectInitError`
  --> tests/ui/fail_old_effect_init_error.rs:1:5
   |
 1 | use silex_reactivity::EffectInitError;
-  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `EffectInitError` in the root
+  |     ^^^^^^^^^^^^^^^^^^---------------
+  |                       |
+  |                       no `EffectInitError` in the root

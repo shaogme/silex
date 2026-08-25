@@ -5,7 +5,7 @@ use js_sys::Promise;
 use silex::prelude::*;
 use silex::ui::{AccordionContent, AccordionContentMode, AccordionItem, AccordionTrigger};
 use silex_core::ErrorHandlerInput;
-use silex_dom::browser::BrowserDom;
+use silex_dom::adapters::browser::BrowserDom;
 use silex_view::{MountContext, MountInstance, MountOwnerToken, View};
 use std::cell::Cell;
 use std::rc::Rc;

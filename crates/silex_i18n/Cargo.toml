@@ -49,8 +49,13 @@ browser-tests = ["browser", "persist", "dep:silex_dom", "dep:silex_router"]
 
 [dev-dependencies]
 gloo-timers.workspace = true
-silex_view.workspace = true
+silex_view = { workspace = true, features = ["browser"] }
 trybuild = "1.0"
 wasm-bindgen-test.workspace = true
 ref_str = "0.2"
 silex_core = { workspace = true, features = ["test-support"] }
+
+[[test]]
+name = "browser"
+path = "tests/browser.rs"
+required-features = ["browser-tests"]

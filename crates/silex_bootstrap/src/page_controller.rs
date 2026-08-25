@@ -1,10 +1,14 @@
 use crate::{AppHost, AppHostError, BootstrapError, HostState, UnmountOutcome};
-use silex_core::{DomError, Runtime, SilexError, SilexResult};
+use silex_core::{Runtime, SilexError, SilexResult};
 use silex_dom::{
-    CleanupSink, DomContext, DomNode,
-    browser::BrowserDom,
-    event::{DomEventBridge, EventKind, EventSpec, WindowEventRequest},
-    host::HostResource,
+    adapters::browser::BrowserDom,
+    diagnostics::DomError,
+    lifecycle::CleanupSink,
+    model::{
+        DomNode,
+        event::{DomEventBridge, EventKind, EventSpec, WindowEventRequest},
+    },
+    runtime::{DomContext, HostResource},
 };
 use silex_view::MountBuilderContext;
 use std::{

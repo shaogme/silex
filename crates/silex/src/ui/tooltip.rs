@@ -1,5 +1,6 @@
 use crate::components::{Portal, PortalHostAttrs};
 use silex_core::prelude::*;
+use silex_dom::{model::event::DomEvent, runtime::HostResource};
 use silex_html::div;
 use silex_macros::{component, tw};
 use silex_view::MountOwnerToken;

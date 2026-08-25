@@ -6,8 +6,8 @@ weight = 50
 
 # View、分支与列表
 
-View API 的唯一公开归属是 `silex_view`。`silex_dom` 不再提供
-`silex_dom::view`、`Element`、`AnyView`、owner 或列表 facade。
+View API 的唯一公开归属是 `silex_view`。`silex_dom` 不再提供 View、Element、
+AnyView、owner 或列表 facade。
 
 ## View 契约
 
@@ -25,15 +25,15 @@ owner 和 transaction；View 不直接保存 browser concrete type。
 identity，失败时恢复旧 snapshot 并 dispose pending rows。`RowUpdater` 绑定
 generation，row 删除后旧 updater 返回 inert/false。
 
-这些语义依赖 `silex_dom::DomRange` 和抽象 tree operation，但 diff、owner、
+这些语义依赖 `silex_dom::runtime::DomRange` 和抽象 tree operation，但 diff、owner、
 rollback 和 scope 约束全部由 `silex_view` 实现。
 
 ## backend 注入
 
 | backend | 构造 | 结果 |
 | --- | --- | --- |
-| browser | `BrowserDom::from_window()` | 真实 DOM、事件和宿主 resource。 |
-| SSR | `SsrDom::new()` | 确定性树和 serialization；事件只生成 hydration record。 |
+| browser | `silex_dom::adapters::browser::BrowserDom::from_window()` | 真实 DOM、事件和宿主 resource。 |
+| SSR | `silex_dom::adapters::ssr::SsrDom::new()` | 确定性树和 serialization；事件只生成 hydration record。 |
 
 这也是为什么 View 的公共签名不能出现 `web_sys::Node`、`web_sys::Element`
 或 `wasm_bindgen` 类型。

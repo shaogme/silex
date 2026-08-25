@@ -54,7 +54,7 @@ void 判定不是从 JSON 的内容模型推导的：HTML 使用
 
 `generate_module_content` 对每个 `TagDef` 生成：
 
-1. 一个 `silex_dom::define_tag!` 调用；
+1. 一个 `silex_view::define_tag!` 调用；
 2. HTML 使用 `new`，SVG 使用 `new_svg`；
 3. HTML 普通元素默认 `web_sys::HtmlElement`，特殊控件使用更具体的
    `web_sys` 类型；SVG 默认使用 `web_sys::SvgElement`；

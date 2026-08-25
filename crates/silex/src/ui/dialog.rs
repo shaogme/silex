@@ -1,5 +1,6 @@
 use crate::components::{Portal, PortalHostAttrs};
 use silex_core::{RxReadRef, prelude::*};
+use silex_dom::model::DomElement;
 use silex_html::{button, div};
 use silex_macros::{component, styled, tw};
 use silex_view::prelude::*;

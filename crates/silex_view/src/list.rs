@@ -10,7 +10,7 @@ use silex_core::traits::{ForLoopSource, RxRead, RxReadRef};
 use silex_core::{
     CloseError, EffectPhase, ErrorHandlerToken, SilexError, SilexErrorKind, SilexResult,
 };
-use silex_dom::{DomError, DomNode};
+use silex_dom::{diagnostics::DomError, model::DomNode};
 use std::{
     collections::{HashMap, HashSet},
     panic::{AssertUnwindSafe, catch_unwind},

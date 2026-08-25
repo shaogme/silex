@@ -537,11 +537,10 @@ pub(crate) struct ComputedEvaluation<T> {
 }
 
 pub(crate) type ComputedEvaluator<'scope, T> = Box<
-    dyn for<'value> FnMut(
+    dyn FnMut(
             Option<&T>,
             SharedCell<GlobalScheduler>,
-        )
-            -> Result<ComputedEvaluation<T>, ComputationExecutionError<'scope>>
+        ) -> Result<ComputedEvaluation<T>, ComputationExecutionError<'scope>>
         + 'scope,
 >;
 pub(crate) type ChangePredicate<'scope, T> =

@@ -4,7 +4,7 @@ use crate::context::{MountContext, MountTarget};
 use crate::contract::{MountInstance, View};
 use crate::event::{EventDescriptor, EventHandler, bind_event};
 use silex_core::{CloseError, SilexError, SilexErrorKind, SilexResult};
-use silex_dom::{ElementSpec, Namespace};
+use silex_dom::model::{DomNode, ElementSpec, Namespace};
 use std::marker::PhantomData;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
@@ -234,7 +234,7 @@ impl<'scope> Element<'scope> {
 fn rollback_mount<'scope>(
     context: &MountContext<'scope>,
     owner: &crate::owner::MountOwnerToken<'scope>,
-    element: &silex_dom::DomNode,
+    element: &DomNode,
     appended: bool,
 ) {
     let close_result = catch_unwind(AssertUnwindSafe(|| owner.close()));

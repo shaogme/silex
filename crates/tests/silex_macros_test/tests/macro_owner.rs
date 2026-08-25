@@ -8,7 +8,7 @@ use silex::core::{
 };
 use silex::css::types::{Hex, hex, px};
 use silex::macros::{classes, css, global, styled, tw};
-use silex_dom::browser::BrowserDom;
+use silex_dom::adapters::browser::BrowserDom;
 use silex_view::AnyView;
 use silex_view::attribute::{AttributeBuilder, GlobalAttributes};
 use silex_view::{MountContext, MountInstance, MountOwnerToken, View};

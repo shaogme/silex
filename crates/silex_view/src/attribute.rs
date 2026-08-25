@@ -5,11 +5,16 @@ use crate::{
     owner::{MountErrorHandler, MountOwnerToken},
 };
 use silex_core::{EffectPhase, ReactiveError, Rx, RxGet, RxWrite, SilexError, SilexResult};
-use silex_dom::attribute::{
-    AttributeRequest, AttributeTarget, AttributeValue, PropertyRequest, PropertyValue,
+use silex_dom::{
+    lifecycle::node_ref::NodeRef,
+    model::{
+        DomElement,
+        attribute::{
+            AttributeRequest, AttributeTarget, AttributeValue, PropertyRequest, PropertyValue,
+        },
+    },
+    runtime::DomContext,
 };
-use silex_dom::node_ref::NodeRef;
-use silex_dom::{DomContext, DomElement};
 use std::{
     borrow::Cow,
     cell::Cell,

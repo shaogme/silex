@@ -48,7 +48,7 @@ WindowListenerHandle
      └── host 正在借用 → reporter(ReentrantOperation)
 ```
 
-controller 只保存由 `silex_dom::host` browser resource 注册得到的
+controller 只保存由 `silex_dom::runtime::host` browser resource 注册得到的
 `HostResource`。`remove_page_lifecycle` 清空 handle 集合，从而移除
 所有由本 controller 安装的 listener；`Drop for PageController` 也会先做
 同样的操作，再让内部 `AppHost` drop。这样页面 listener 不会在 host 已经

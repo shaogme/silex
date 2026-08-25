@@ -6,7 +6,7 @@ weight = 40
 
 # 属性、事件与 `NodeRef`
 
-`silex_dom::attribute` 不构造高层属性 builder。它接收已经由
+`silex_dom::model::attribute` 不构造高层属性 builder。它接收已经由
 `silex_view::attribute` 解析好的 `AttributeRequest`、`PropertyRequest` 和
 `AttributeValue`，把同一套操作交给 browser 或 SSR backend。
 
@@ -17,7 +17,7 @@ silex_view::AttributeBuilder
   attr / prop / class / style / on / node_ref
                 │
                 ▼
-silex_dom::attribute::AttributeRequest
+silex_dom::model::attribute::AttributeRequest
   AttributeTarget + AttributeValue
                 │
                 ▼
@@ -41,7 +41,7 @@ let view = Element::with_child("button", "save")
 
 ## 事件与 SSR omission
 
-`silex_dom::event::EventSpec` 只描述名称、类别、bubbles 和 cancelable；
+`silex_dom::model::event::EventSpec` 只描述名称、类别、bubbles 和 cancelable；
 browser concrete event 类型以及 owner-bound callback 位于 `silex_view::event`。
 SSR listener 注册是 inert 的：serialization 永远不生成 `onclick` 或其它
 事件 attribute，而 `SsrDom::hydration_records()` 记录目标 backend、稳定节点
@@ -53,7 +53,7 @@ identity 和 `EventSpec`。
 
 ## `NodeRef`
 
-`silex_dom::node_ref::NodeRef<'scope>` 只保存抽象 `DomNode`，不暴露 browser
+`silex_dom::lifecycle::node_ref::NodeRef<'scope>` 只保存抽象 `DomNode`，不暴露 browser
 对象。`silex_view::GlobalEventAttributes::node_ref` 在 mount 后 set，在 owner
 cleanup 时 clear。NodeRef 的生命周期不能超过当前 mount scope；跨 scope 保存
 会被 trybuild 拒绝。SSR、browser 和 rollback 都必须验证成功 mount 期间可读，
@@ -65,5 +65,5 @@ builder 失败或 dispose 后为空。
 staging 阶段运行，`AttrOp::on_commit` 只用于需要提交后物理状态的操作。错误
 由 `DomError` 转为 `SilexErrorKind::Dom`，由当前 View owner 的 handler 报告。
 
-相关源码：`silex_dom/src/attribute_backend.rs`、`silex_dom/src/event_backend.rs`、
-`silex_view/src/attribute.rs`、`silex_dom/src/node_ref.rs`。
+相关源码：`silex_dom/src/model/attribute.rs`、`silex_dom/src/model/event.rs`、
+`silex_view/src/attribute.rs`、`silex_dom/src/lifecycle/node_ref.rs`。

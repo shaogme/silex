@@ -49,22 +49,23 @@ pub fn silex() -> TokenStream {
     }
 }
 
-/// 展开中引用新的 View crate。
-///
-/// View 不是 facade 的隐式模块：宏生成的 View、属性和事件 bound 必须指向
-/// `silex_view` 本身。`proc_macro_crate` 同时覆盖默认依赖名和
-/// `package = "silex_view"` 的 renamed dependency。
+/// 展开中引用 `silex_view` crate 的路径。
 pub fn silex_view() -> TokenStream {
     let resolved = RESOLVED_VIEW.get_or_init(|| match proc_macro_crate::crate_name("silex_view") {
         Ok(proc_macro_crate::FoundCrate::Itself) => None,
         Ok(proc_macro_crate::FoundCrate::Name(name)) => Some(name),
-        Err(_) => Some("silex_view".to_string()),
+        Err(_) => match proc_macro_crate::crate_name("silex") {
+            Ok(proc_macro_crate::FoundCrate::Itself) => Some("silex::view".to_string()),
+            Ok(proc_macro_crate::FoundCrate::Name(name)) => Some(format!("{}::view", name)),
+            Err(_) => Some("silex_view".to_string()),
+        },
     });
 
     match resolved {
         Some(name) => {
-            let ident = Ident::new(name, Span::call_site());
-            quote!(::#ident)
+            let path: syn::Path = syn::parse_str(&format!("::{}", name))
+                .unwrap_or_else(|_| syn::parse_str("::silex_view").unwrap());
+            quote!(#path)
         }
         None => quote!(crate),
     }

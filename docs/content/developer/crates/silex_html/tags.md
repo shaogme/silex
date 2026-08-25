@@ -8,7 +8,7 @@ weight = 20
 
 `src/tags/html.rs` 和 `src/tags/svg.rs` 不是手写标签表，而是
 `silex_codegen` 根据标签配置生成的 Rust 源码。每一行
-`silex_dom::define_tag!` 同时定义 marker、`TypedElement` 构造函数和标签
+`silex_view::define_tag!` 同时定义 marker、`TypedElement` 构造函数和标签
 能力 trait 实现；非 void 标签随后还会生成一个同名宏。
 
 ## 两种调用形态
@@ -65,7 +65,7 @@ SVG 的函数名遵循生成器的 Rust snake case 转换，例如 `linearGradie
 
 | 标签类别 | 当前 `DomElement` |
 | --- | --- |
-| 普通 HTML 标签 | `silex_dom::DomElement`，由 browser/SSR backend 创建 |
+| 普通 HTML 标签 | `silex_dom::model::DomElement`，由 browser/SSR backend 创建 |
 | `input`、`textarea`、`select`、`button` | View marker 提供属性能力 |
 | `option`、`optgroup`、`form`、`a` | View marker 提供属性能力 |
 | `img`、`canvas`、`audio`、`video`、`dialog`、`details`、`iframe` | View marker 提供属性能力 |
@@ -104,10 +104,10 @@ let svg_title = silex_html::svg::svg_title("SVG title");
 ```
 
 应用自己的标签不应修改生成的 HTML/SVG 文件。可以在应用或其他 facade 中
-调用 `silex_dom::define_tag!`：
+调用 `silex_view::define_tag!`：
 
 ```rust
-silex_dom::define_tag!(Icon, web_sys::SvgElement, "x-icon", icon, new_svg, non_void, [SvgTag, TextTag]);
+silex_view::define_tag!(Icon, "x-icon", svg, icon, new_svg, non_void, [SvgTag, TextTag]);
 
 let view = icon("content");
 ```
@@ -118,7 +118,7 @@ let view = icon("content");
 
 ## 运行时边界
 
-构造标签不会创建节点，`TypedElement` 实现的是 `silex_dom::View`。真正
+构造标签不会创建节点，`TypedElement` 实现的是 `silex_view::View`。真正
 mount 时，标签的 child、属性和事件在一个新的 provisional owner 下创建；
 失败会由 `silex_dom` 回滚，owner 关闭时移除节点和关联资源。因此不要把
 标签函数的返回值误当成已经存在的 `web_sys::Element`，也不要从它推导出

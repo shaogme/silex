@@ -4,8 +4,8 @@ use silex_core::{
     CleanupDiagnostic, CleanupPayloadKind, CloseError, SilexError, SilexErrorKind, ViewError,
 };
 use silex_dom::{
-    error::{CleanupFailure as DomCleanupFailure, CleanupOrigin, CleanupReport},
-    log::console_error,
+    diagnostics::logging::console_error,
+    lifecycle::{CleanupFailure as DomCleanupFailure, CleanupOrigin, CleanupReport},
 };
 use std::{
     any::Any,
@@ -343,8 +343,8 @@ mod unwind_safety_tests {
 #[cfg(all(test, target_arch = "wasm32"))]
 mod tests {
     use super::*;
-    use silex_core::{DisposeError, DomError, MountError, SilexErrorKind};
-    use silex_dom::CleanupReport;
+    use silex_core::{DisposeError, MountError, SilexErrorKind};
+    use silex_dom::{diagnostics::DomError, lifecycle::CleanupReport};
     use wasm_bindgen_test::*;
 
     wasm_bindgen_test_configure!(run_in_browser);

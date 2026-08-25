@@ -4,8 +4,10 @@ use silex_core::{
     SilexResult, ViewError,
 };
 use silex_dom::{
-    CleanupFailure as DomCleanupFailure, CleanupOrigin, CleanupReport, CleanupSink, DomContext,
-    DomNode, browser::BrowserDom,
+    adapters::browser::BrowserDom,
+    lifecycle::{CleanupFailure as DomCleanupFailure, CleanupOrigin, CleanupReport, CleanupSink},
+    model::DomNode,
+    runtime::DomContext,
 };
 use silex_view::{MountBuilderContext, MountedApp};
 use std::{

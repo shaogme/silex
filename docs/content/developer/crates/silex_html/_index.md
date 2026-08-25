@@ -10,7 +10,7 @@ sort_by = "weight"
 `silex_html` 是 Silex 面向应用层的 HTML/SVG facade。它不直接管理浏览器
 DOM，而是把标签名、命名空间、标签类别和常用属性方法组织成可组合的
 `silex_view::TypedElement`。真正的节点创建、挂载、事件和 owner 清理由
-`silex_view` 通过注入的 `silex_dom::DomContext` 完成。
+`silex_view` 通过注入的 `silex_dom::runtime::DomContext` 完成。
 
 ## 在 Silex 架构中的位置
 
@@ -26,7 +26,7 @@ DOM，而是把标签名、命名空间、标签类别和常用属性方法组�
   View · AttributeBuilder · MountOwner
         │
         ▼
-  silex_dom::DomContext
+  silex_dom::runtime::DomContext
     browser adapter / SSR
 ```
 
@@ -146,7 +146,8 @@ let erased = typed.into_untyped().attr("value", "after-erasure");
 - 属性、事件、响应式 effect 和节点清理由传入的 `MountOwner` 管理；
   `silex_html` 不提供独立的 dispose API。
 - `silex_html` 的公共标签和属性 API 不使用 `web_sys` concrete type；真实
-  browser mount、事件和浏览器对象访问由显式 `silex_dom::browser::BrowserDom`
+  browser mount、事件和浏览器对象访问由显式
+  `silex_dom::adapters::browser::BrowserDom`
   adapter 提供，并需要 `wasm32` 环境。
 - `TypedElement` 带有 `'scope`，因此属性中的借用值和响应式值不能逃逸
   对应的 mount scope；不要把带 scope 的 view 当作 `'static` 配置保存。

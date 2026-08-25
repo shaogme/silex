@@ -2,7 +2,7 @@
 
 use silex_bootstrap::{AppHost, AppHostError, BootstrapError, HostState, UnmountOutcome};
 use silex_core::{Runtime, SilexError, SilexErrorKind, SilexResult, ViewError};
-use silex_dom::CleanupSink;
+use silex_dom::lifecycle::CleanupSink;
 use silex_view::{Element, MountBuilderContext};
 use std::{cell::Cell, rc::Rc};
 use wasm_bindgen_test::*;

@@ -9,7 +9,7 @@ sort_by = "weight"
 
 `silex_view` 是高层 DOM 组织层。它拥有 `View`、`Element`、typed tags、
 属性 builder、事件 handler、owner、动态分支、列表、`MountedApp` 和错误状态；
-物理节点与 backend 能力通过 `silex_dom::DomContext` 注入。
+物理节点与 backend 能力通过 `silex_dom::runtime::DomContext` 注入。
 
 ## 公共边界
 
@@ -20,13 +20,14 @@ Element / View / AttributeBuilder / EventHandler
               MountContext + owner
                        │
                        ▼
-             silex_dom::DomContext
+             silex_dom::runtime::DomContext
                        │
                  browser / SSR
 ```
 
 公共签名不携带 `web_sys` 或 `wasm_bindgen` 类型。browser 使用
-`BrowserDom::from_window()`，SSR 使用 `SsrDom::new()`；同一 View mount 契约
+`silex_dom::adapters::browser::BrowserDom::from_window()`，SSR 使用
+`silex_dom::adapters::ssr::SsrDom::new()`；同一 View mount 契约
 可以在两者上运行。
 
 ## 入口
@@ -40,7 +41,7 @@ Element / View / AttributeBuilder / EventHandler
 | `MountContext` | 单个 View 的 target、ancestry、transaction、owner 和 handler。 |
 | `MountOwnerToken` / `MountState` | effect、cleanup、动态状态和资源注册。 |
 | `AnyView` / dynamic / list / row | 类型擦除、稳定 branch、keyed identity 和 row updater。 |
-| `SsrDom` / `DomContext` | 从 `silex_dom` re-export 的 backend-neutral 类型。 |
+| `SsrDom` / `DomContext` | 通过 `silex_dom::adapters::ssr` 与 `silex_dom::runtime` 显式导入。 |
 
 ## 最小 mount
 
@@ -81,7 +82,7 @@ mount 期间保存抽象节点，rollback/dispose 后清空。
 
 ### NodeRef 能力入口
 
-`silex_dom::node_ref::NodeRef<'scope>` 只保存 backend-neutral 的 opaque
+`silex_dom::lifecycle::node_ref::NodeRef<'scope>` 只保存 backend-neutral 的 opaque
 `DomNode`。`Some` 只表示当前存在逻辑 binding，不代表节点属于调用者选择的
 backend、仍连接在 document 中或一定可以执行某项能力。需要 DOM 能力时必须使用
 显式的 context：

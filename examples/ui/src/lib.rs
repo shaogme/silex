@@ -1,5 +1,5 @@
 use silex::bootstrap::{BrowserBootstrap, JsAppHost};
-use silex::dom::CleanupSink;
+use silex::dom::lifecycle::CleanupSink;
 use silex::prelude::*;
 use silex::reexports::*;
 use silex::ui::{Button, Dialog, Input, Progress, Switch, Textarea, *};

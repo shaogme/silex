@@ -3,7 +3,7 @@ use crate::context::MountContext;
 use silex_core::{
     ErrorHandlerInput, OwnerAccess, ReactiveSource, Rx, RxData, RxValue, SilexResult,
 };
-use silex_dom::DomNode;
+use silex_dom::model::DomNode;
 use std::{
     fmt::{Debug, Display, Formatter, Result as FmtResult},
     marker::PhantomData,

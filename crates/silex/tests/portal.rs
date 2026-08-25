@@ -7,7 +7,7 @@ use silex::ui::{
     Dialog, Popover, PopoverContent, PopoverTrigger, Tooltip, TooltipContent, TooltipTrigger,
 };
 use silex_core::ErrorHandlerInput;
-use silex_dom::browser::BrowserDom;
+use silex_dom::adapters::browser::BrowserDom;
 use silex_view::{MountContext, MountInstance, MountOwnerToken, View};
 use std::rc::Rc;
 use std::{

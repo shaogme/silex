@@ -132,7 +132,7 @@ let view = silex_html::button("Save")
 `on_input`/`on_change` 则先读取 event target 的字符串值。callback 返回的
 `SilexResult` 错误交给 mount error handler，listener 和 JS closure 绑定到
 owner，owner 关闭后不会继续调用应用 callback。跨元素复用多组属性时，可用
-`silex_dom::group!` 或 `AttributeBuilder::apply`，不要复制一套新的
+`silex_view::attribute::group` 或 `AttributeBuilder::apply`，不要复制一套新的
 `IntoStorable` 转换逻辑。
 
 ## 当前能力边界与迁移

@@ -3,8 +3,10 @@ use silex_css::CssPart;
 use silex_css::prelude::{
     DynamicCss, IntoCssReactive, Style, ThemeToCss, ThemeType, theme_variables,
 };
-use silex_dom::error::CleanupSink;
-use silex_dom::ssr::{SerializeOptions, SsrDom};
+use silex_dom::{
+    adapters::ssr::{SerializeOptions, SsrDom},
+    lifecycle::CleanupSink,
+};
 use silex_view::attribute::{AttributeBuilder, GlobalAttributes};
 use silex_view::{Element, MountedApp};
 

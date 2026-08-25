@@ -8,7 +8,7 @@
 #[macro_export]
 macro_rules! log {
     ($($t:tt)*) => {
-        $crate::log::console_log(format_args!($($t)*).to_string())
+        $crate::diagnostics::logging::console_log(format_args!($($t)*).to_string())
     };
 }
 
@@ -16,7 +16,7 @@ macro_rules! log {
 #[macro_export]
 macro_rules! warn {
     ($($t:tt)*) => {
-        $crate::log::console_warn(format_args!($($t)*).to_string())
+        $crate::diagnostics::logging::console_warn(format_args!($($t)*).to_string())
     };
 }
 
@@ -24,7 +24,7 @@ macro_rules! warn {
 #[macro_export]
 macro_rules! error {
     ($($t:tt)*) => {
-        $crate::log::console_error(format_args!($($t)*).to_string())
+        $crate::diagnostics::logging::console_error(format_args!($($t)*).to_string())
     };
 }
 
@@ -32,7 +32,7 @@ macro_rules! error {
 #[macro_export]
 macro_rules! debug_log {
     ($($t:tt)*) => {
-        $crate::log::console_debug_log(format_args!($($t)*).to_string())
+        $crate::diagnostics::logging::console_debug_log(format_args!($($t)*).to_string())
     };
 }
 
@@ -40,7 +40,7 @@ macro_rules! debug_log {
 #[macro_export]
 macro_rules! debug_warn {
     ($($t:tt)*) => {
-        $crate::log::console_debug_warn(format_args!($($t)*).to_string())
+        $crate::diagnostics::logging::console_debug_warn(format_args!($($t)*).to_string())
     };
 }
 
@@ -48,7 +48,7 @@ macro_rules! debug_warn {
 #[macro_export]
 macro_rules! debug_error {
     ($($t:tt)*) => {
-        $crate::log::console_debug_error(format_args!($($t)*).to_string())
+        $crate::diagnostics::logging::console_debug_error(format_args!($($t)*).to_string())
     };
 }
 

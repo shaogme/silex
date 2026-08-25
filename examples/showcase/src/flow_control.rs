@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use crate::css::AppTheme;
 use silex::prelude::*;
-use silex_view::view_match;
+use silex::view::view_match;
 
 #[component]
 pub fn ListDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {

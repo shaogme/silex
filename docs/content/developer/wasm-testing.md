@@ -75,11 +75,11 @@ no_proxy=127.0.0.1,localhost \
 GECKODRIVER_REMOTE=http://127.0.0.1:4444 \
 WASM_BINDGEN_USE_BROWSER=1 \
 RUSTFLAGS='-D warnings' \
-cargo test -p silex_dom \
+cargo test -p silex_view \
   --target wasm32-unknown-unknown \
-  --test host_resources \
+  --test browser \
   -- --nocapture \
-  --skip element_listener_panic_closes_destination_before_owner_cleanup
+  --skip browser_stateful_keyed_updater_panic_preserves_previous_dom_and_order
 ```
 
 使用 `GECKODRIVER_REMOTE` 时，runner 不会负责启动或终止 geckodriver。测试完成
@@ -93,11 +93,11 @@ no_proxy=127.0.0.1,localhost \
 GECKODRIVER=/absolute/path/to/geckodriver \
 WASM_BINDGEN_USE_BROWSER=1 \
 RUSTFLAGS='-D warnings' \
-cargo test -p silex_dom \
+cargo test -p silex_view \
   --target wasm32-unknown-unknown \
-  --test host_resources \
+  --test browser \
   -- --nocapture \
-  --skip element_listener_panic_closes_destination_before_owner_cleanup
+  --skip browser_stateful_keyed_updater_panic_preserves_previous_dom_and_order
 ```
 
 如果 runner 启动驱动时出现连接竞态，可开启日志：
@@ -107,11 +107,11 @@ RUST_LOG=debug \
 GECKODRIVER=/absolute/path/to/geckodriver \
 GECKODRIVER_ARGS='--log trace' \
 RUSTFLAGS='-D warnings' \
-cargo test -p silex_dom \
+cargo test -p silex_view \
   --target wasm32-unknown-unknown \
-  --test host_resources \
+  --test browser \
   -- --nocapture \
-  --skip element_listener_panic_closes_destination_before_owner_cleanup
+  --skip browser_stateful_keyed_updater_panic_preserves_previous_dom_and_order
 ```
 
 ## stable 工具链测试
@@ -120,14 +120,14 @@ cargo test -p silex_dom \
 
 ```sh
 RUSTFLAGS='-D warnings' \
-cargo check -p silex_dom \
+cargo check -p silex_dom --no-default-features --features browser \
   --target wasm32-unknown-unknown \
   --all-targets
 
 RUSTFLAGS='-D warnings' \
-cargo test -p silex_dom \
+cargo test -p silex_view \
   --target wasm32-unknown-unknown \
-  --test host_resources \
+  --test browser \
   --no-run
 ```
 
@@ -142,9 +142,9 @@ NO_PROXY=127.0.0.1,localhost \
 no_proxy=127.0.0.1,localhost \
 GECKODRIVER_REMOTE=http://127.0.0.1:4444 \
 RUSTFLAGS='-D warnings' \
-cargo test -p silex_dom \
+cargo test -p silex_view \
   --target wasm32-unknown-unknown \
-  --test owner \
+  --test browser \
   -- --nocapture
 ```
 
@@ -236,11 +236,11 @@ scripts/wasm-test.sh
 ```sh
 GECKODRIVER_REMOTE=http://127.0.0.1:4444 \
 RUSTFLAGS='-D warnings' \
-cargo test -p silex_dom \
+cargo test -p silex_view \
   --target wasm32-unknown-unknown \
-  --test host_resources \
+  --test browser \
   -- --nocapture \
-  --skip element_listener_panic_closes_destination_before_owner_cleanup
+  --skip browser_stateful_keyed_updater_panic_preserves_previous_dom_and_order
 ```
 
 需要验证 panic 捕获、cleanup 或 rollback 时，使用下一节的 nightly 命令。
@@ -267,15 +267,15 @@ exception 指令。不要把这组 flags 写入系统级配置。
 先编译，再运行浏览器测试：
 
 ```sh
-cargo +nightly wasm-check-nightly -p silex_dom --all-targets
+cargo +nightly wasm-check-nightly -p silex_dom --all-targets --no-default-features --features browser
 
 NO_PROXY=127.0.0.1,localhost \
 no_proxy=127.0.0.1,localhost \
 GECKODRIVER_REMOTE=http://127.0.0.1:4444 \
 WASM_BINDGEN_USE_BROWSER=1 \
 cargo +nightly wasm-test-nightly \
-  -p silex_dom \
-  --test host_resources \
+  -p silex_view \
+  --test browser \
   -- --include-ignored --nocapture
 ```
 
@@ -316,7 +316,7 @@ geckodriver --version
 NO_PROXY=127.0.0.1,localhost \
 no_proxy=127.0.0.1,localhost \
 GECKODRIVER_REMOTE=http://127.0.0.1:4444 \
-cargo test -p silex_dom --target wasm32-unknown-unknown --test owner
+cargo test -p silex_view --target wasm32-unknown-unknown --test browser
 ```
 
 如果仍然失败，查看 geckodriver 的 `--log trace` 输出，确认是否收到
@@ -344,7 +344,7 @@ nightly `build-std` 命令。
 为 Cargo 测试参数加入 `--nocapture`：
 
 ```sh
-cargo test -p silex_dom --target wasm32-unknown-unknown --test owner -- --nocapture
+cargo test -p silex_view --target wasm32-unknown-unknown --test browser -- --nocapture
 ```
 
 如果仍然需要一次性读取 runner 输出，可设置：

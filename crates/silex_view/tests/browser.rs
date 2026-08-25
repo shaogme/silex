@@ -3,13 +3,16 @@
 use js_sys::Promise;
 use silex_core::reactivity::Signal;
 use silex_core::{Runtime, RxGet, SilexError, SilexErrorKind};
-use silex_dom::browser::BrowserDom;
-use silex_dom::error::CleanupSink;
-use silex_dom::event::{
-    DomEventBridge, EventKind, EventSpec, PhysicalEventRequest, WindowEventRequest,
+use silex_dom::{
+    adapters::browser::BrowserDom,
+    diagnostics::DomError,
+    lifecycle::CleanupSink,
+    model::{
+        DomNode, ElementSpec,
+        event::{DomEventBridge, EventKind, EventSpec, PhysicalEventRequest, WindowEventRequest},
+    },
+    runtime::{HostResourceState, RangeRequest},
 };
-use silex_dom::host::HostResourceState;
-use silex_dom::{DomError, ElementSpec, RangeRequest};
 use silex_view::attribute::{AttributeBuilder, GlobalAttributes, GlobalEventAttributes};
 use silex_view::dynamic::BranchEvaluation;
 use silex_view::element::Element;
@@ -38,7 +41,7 @@ fn document() -> Document {
         .expect("browser document should exist")
 }
 
-fn test_host(browser: &BrowserDom) -> (RawElement, silex_dom::DomNode) {
+fn test_host(browser: &BrowserDom) -> (RawElement, DomNode) {
     let raw_host = document()
         .create_element("div")
         .expect("test host should be creatable");
@@ -223,7 +226,7 @@ fn browser_element_and_window_resources_cancel_independently() {
     remove_host(&raw_host);
 }
 
-fn app(browser: &BrowserDom, host: silex_dom::DomNode) -> MountedApp {
+fn app(browser: &BrowserDom, host: DomNode) -> MountedApp {
     MountedApp::new(
         Runtime::new(),
         browser.context(),

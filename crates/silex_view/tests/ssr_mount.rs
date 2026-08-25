@@ -1,7 +1,9 @@
 use silex_core::reactivity::Signal;
 use silex_core::{Runtime, SilexError, SilexErrorKind};
-use silex_dom::error::CleanupSink;
-use silex_dom::ssr::{SerializeOptions, SsrDom};
+use silex_dom::{
+    adapters::ssr::{SerializeOptions, SsrDom},
+    lifecycle::CleanupSink,
+};
 use silex_view::attribute::{AttributeBuilder, GlobalAttributes, GlobalEventAttributes};
 use silex_view::element::Element;
 use silex_view::event;
@@ -176,10 +178,7 @@ fn owner_cleanup_orders_binding_event_lease_and_dom_removal() {
         })
         .expect("mount should succeed");
     mounted.dispose().expect("dispose should succeed");
-    let snapshot = observed_for_assertion
-        .borrow()
-        .clone()
-        .expect("cleanup should record the order");
+    let snapshot = (*observed_for_assertion.borrow()).expect("cleanup should record the order");
     assert!(
         snapshot.0,
         "NodeRef binding must clear before parent cleanup"

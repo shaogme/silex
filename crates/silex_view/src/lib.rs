@@ -48,21 +48,16 @@ pub use owner::{
 pub use reactive::AutoReactiveView;
 pub use row::RowUpdater;
 
-pub use silex_dom::host::HostResource;
-pub use silex_dom::ssr::SsrDom;
-pub use silex_dom::{DomContext, DomElement, DomNode, DomRange};
-
 /// 高层 View API 的推荐导入集合。
 pub mod prelude {
     pub use crate::attribute::{
         AriaAttributes, AttributeGroup, GlobalAttributes, GlobalEventAttributes, IntoStorable,
     };
     pub use crate::{
-        AnyView, Attr, AttrOp, AttributeBuilder, BranchEvaluation, BranchRenderContext, DomContext,
-        DomElement, DomEvent, DomNode, DomRectData, Element, Event, EventDescriptor, EventKind,
-        EventSpec, HostResource, MountAncestry, MountBuilderContext, MountContext, MountDomAction,
-        MountInstance, MountOwner, MountOwnerToken, MountState, MountedApp, PointerEventData, Prop,
-        PropFixed, PropMissing, RowUpdater, Tag, TypedElement, View, ViewCons, ViewNil, chain,
-        event,
+        AnyView, Attr, AttrOp, AttributeBuilder, BranchEvaluation, BranchRenderContext, DomEvent,
+        DomRectData, Element, Event, EventDescriptor, EventKind, EventSpec, MountAncestry,
+        MountBuilderContext, MountContext, MountDomAction, MountInstance, MountOwner,
+        MountOwnerToken, MountState, MountedApp, PointerEventData, Prop, PropFixed, PropMissing,
+        RowUpdater, Tag, TypedElement, View, ViewCons, ViewNil, chain, event,
     };
 }

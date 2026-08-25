@@ -17,9 +17,9 @@ workspace = true
 
 [dependencies]
 silex_core.workspace = true
-silex_dom.workspace = true
+silex_dom = { path = "../silex_dom", version = "0.1.0-beta.9", default-features = false }
 silex_hash.workspace = true
-silex_view.workspace = true
+silex_view = { path = "../silex_view", version = "0.1.0-beta.9", default-features = false }
 silex_tw_core = { workspace = true, optional = true }
 wasm-bindgen.workspace = true
 web-sys = { workspace = true, features = [
@@ -43,10 +43,28 @@ js-sys.workspace = true
 wasm-bindgen-futures.workspace = true
 
 [features]
+default = ["browser"]
+browser = ["silex_dom/browser", "silex_view/browser"]
+ssr = ["silex_dom/ssr", "silex_view/ssr"]
 tw = ["dep:silex_tw_core"]
 # Browser regression target that forces the real `<style>` fallback backend.
-test-style-fallback = []
+test-style-fallback = ["browser"]
 
 [dev-dependencies]
 trybuild = "1.0"
 wasm-bindgen-test.workspace = true
+
+[[test]]
+name = "ssr"
+path = "tests/ssr.rs"
+required-features = ["ssr"]
+
+[[test]]
+name = "fallback"
+path = "tests/fallback.rs"
+required-features = ["test-style-fallback"]
+
+[[test]]
+name = "docs_examples"
+path = "tests/docs_examples.rs"
+required-features = ["browser"]

@@ -2,7 +2,7 @@ use crate::context::{MountContext, MountTarget, MountTransaction};
 use crate::contract::{MountInstance, View, ViewCons, ViewNil};
 use crate::owner::{MountOwner, OwnerMount};
 use silex_core::{CloseError, SilexError, SilexErrorKind, SilexResult};
-use silex_dom::DomNode;
+use silex_dom::model::DomNode;
 use std::{
     borrow::Cow,
     panic::{AssertUnwindSafe, catch_unwind},

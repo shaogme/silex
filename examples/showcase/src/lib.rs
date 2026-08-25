@@ -9,7 +9,7 @@ pub mod routes;
 
 use advanced::UserSettingsStore;
 use silex::bootstrap::{BrowserBootstrap, JsAppHost};
-use silex::dom::CleanupSink;
+use silex::dom::lifecycle::CleanupSink;
 use silex::prelude::*;
 use silex::reexports::web_sys;
 

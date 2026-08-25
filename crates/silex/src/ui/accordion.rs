@@ -1,5 +1,12 @@
 use silex_core::prelude::*;
-use silex_dom::attribute::{AttributeRequest, AttributeTarget, AttributeValue};
+use silex_dom::{
+    model::{
+        DomElement,
+        attribute::{AttributeRequest, AttributeTarget, AttributeValue},
+        event::DomEvent,
+    },
+    runtime::DomContext,
+};
 use silex_html::{button, div, path, svg};
 use silex_macros::{component, tw};
 use silex_view::prelude::*;

@@ -1,11 +1,13 @@
 use std::error::Error;
 
 #[cfg(target_arch = "wasm32")]
-use silex_core::{DomError, Runtime, SilexError};
+use silex_core::{Runtime, SilexError};
 #[cfg(target_arch = "wasm32")]
-use silex_dom::browser::BrowserDom;
+use silex_dom::adapters::browser::BrowserDom;
 #[cfg(target_arch = "wasm32")]
-use silex_dom::error::CleanupSink;
+use silex_dom::diagnostics::DomError;
+#[cfg(target_arch = "wasm32")]
+use silex_dom::lifecycle::CleanupSink;
 #[cfg(target_arch = "wasm32")]
 use silex_view::attribute::GlobalAttributes;
 #[cfg(target_arch = "wasm32")]

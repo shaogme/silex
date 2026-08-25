@@ -1,4 +1,4 @@
-error[E0277]: expected a `FnMut()` closure, found `ErrorHandlerToken<'_, _>`
+error[E0277]: expected an `FnMut()` closure, found `ErrorHandlerToken<'_, _>`
   --> tests/ui/fail_old_effect_signature.rs:8:13
    |
  6 |           let _ = scope.effect(

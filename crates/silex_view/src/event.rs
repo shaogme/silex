@@ -1,17 +1,21 @@
 use crate::context::MountContext;
 use silex_core::{ErrorHandlerInput, SilexResult};
-use silex_dom::DomElement;
-use silex_dom::error::DomError;
-use silex_dom::event::{DomEventBridge, EventOptions, PhysicalEventRequest};
-use silex_dom::host::HostResource;
+use silex_dom::{
+    diagnostics::DomError,
+    model::{
+        DomElement, DomNode,
+        event::{DomEventBridge, EventOptions, PhysicalEventRequest},
+    },
+    runtime::HostResource,
+};
 use std::{borrow::Cow, cell::Cell, rc::Rc};
 
-pub use silex_dom::event::{
+pub use silex_dom::model::event::{
     DomEvent, DomRectData, EventKind, EventSpec, MouseEventData, PointerEventData,
     WindowEventRequest,
 };
 
-pub use silex_dom::event::EventDescriptor;
+pub use silex_dom::model::event::EventDescriptor;
 
 /// 事件 handler 的参数模式。
 pub struct WithEventArg;
@@ -165,14 +169,14 @@ where
     owner.track_host_resource(resource, error_handler.handler_ref())
 }
 
-pub fn event_target(event: &DomEvent) -> &silex_dom::DomNode {
+pub fn event_target(event: &DomEvent) -> &DomNode {
     event.target()
 }
 
 #[cfg(test)]
 mod tests {
     use super::{Event, EventDescriptor};
-    use silex_dom::event::EventKind;
+    use silex_dom::model::event::EventKind;
 
     #[test]
     fn descriptor_is_backend_neutral() {

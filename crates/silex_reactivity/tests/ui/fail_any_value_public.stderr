@@ -2,4 +2,6 @@ error[E0432]: unresolved import `silex_reactivity::AnyValue`
  --> tests/ui/fail_any_value_public.rs:1:5
   |
 1 | use silex_reactivity::AnyValue;
-  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^ no `AnyValue` in the root
+  |     ^^^^^^^^^^^^^^^^^^--------
+  |                       |
+  |                       no `AnyValue` in the root

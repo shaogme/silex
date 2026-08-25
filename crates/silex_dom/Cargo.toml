@@ -75,3 +75,13 @@ js-sys = { workspace = true, optional = true }
 wasm-bindgen-futures.workspace = true
 trybuild = "1.0"
 wasm-bindgen-test.workspace = true
+
+[[test]]
+name = "node_ref"
+path = "tests/node_ref.rs"
+required-features = ["ssr"]
+
+[[test]]
+name = "ssr"
+path = "tests/ssr.rs"
+required-features = ["ssr"]

@@ -22,31 +22,30 @@ silex_html / silex / 组件
           │ 注入 DomContext
           ▼
      silex_dom
-  tree · attribute · event · host
-       ┌──┴──┐
-    browser  ssr
+  model · runtime · lifecycle · diagnostics
+       ┌────────┴────────┐
+  adapters::browser  adapters::ssr
 ```
 
 高层代码不得通过全局 `document()` 创建节点，也不得从本 crate 导入旧的
-View/Element facade。browser 应显式创建 `silex_dom::browser::BrowserDom`，
-SSR 应显式创建 `silex_dom::ssr::SsrDom`，再把 `DomContext` 注入
+View/Element facade。browser 应显式创建
+`silex_dom::adapters::browser::BrowserDom`，SSR 应显式创建
+`silex_dom::adapters::ssr::SsrDom`，再把 `DomContext` 注入
 `silex_view::MountedApp`。
 
 ## 公开入口
 
 | 模块 | 责任 |
 | --- | --- |
-| `tree` | `DomNode`、`DomElement`、`DomRange`、`ElementSpec` 和 namespace。 |
-| `attribute` | backend-neutral `AttributeRequest`、`PropertyRequest` 及其值。 |
-| `event` | `EventDescriptor`、`EventSpec`、物理 listener request 和 hydration record。 |
-| `host` | owner 可注册的物理宿主资源。 |
-| `node_ref` | 保存抽象 `DomNode` 的 scope-bound `NodeRef`。 |
-| `browser` | 唯一的 `web_sys` DOM/event/style adapter。 |
-| `ssr` | 确定性内存 DOM、HTML serialization 和 `HydrationRecord`。 |
-| `error` / `log` | DOM/host cleanup report、错误转换和同构日志。 |
+| `model` | `DomNode`、`DomElement`、`ElementSpec`、attribute/event DTO 和 hydration record。 |
+| `runtime` | `DomContext`、tree/range 操作以及 owner 可注册的宿主资源。 |
+| `lifecycle` | `CleanupReport`、`CleanupSink` 和 scope-bound `NodeRef`。 |
+| `diagnostics` | `DomError`、`DomResult` 和同构日志。 |
+| `adapters::browser` | 唯一的 `web_sys` DOM/event/style adapter。 |
+| `adapters::ssr` | 确定性内存 DOM、HTML serialization 和 hydration record。 |
 
-`silex_dom::prelude` 只包含上述低层类型；`View`、`Element`、属性 builder、
-事件 handler 和 `MountedApp` 应从 `silex_view` 导入。
+`silex_dom` 不再提供 `prelude` 或高层 View facade；`View`、`Element`、属性
+builder、事件 handler 和 `MountedApp` 应从 `silex_view` 导入。
 
 ## Feature 与依赖边界
 

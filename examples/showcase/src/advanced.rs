@@ -1,8 +1,8 @@
 use std::borrow::Cow;
 
 use crate::css::AppTheme;
-use silex::dom::log::console_log;
 use silex::prelude::*;
+use silex::dom::diagnostics::logging::console_log;
 
 // --- Store Definition ---
 #[derive(Clone, Default, serde::Serialize, serde::Deserialize)]

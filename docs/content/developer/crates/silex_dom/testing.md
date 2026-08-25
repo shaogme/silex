@@ -51,7 +51,8 @@ browser target 实际运行时必须记录 `firefox`、`geckodriver`、
 
 - SSR：markup deterministic、event omission、hydration record target identity；
 - View：NodeRef active/rollback/dispose、owner cleanup、rollback retry；
-- API：无 `silex_dom::view`、高层 `silex_dom::element/attribute/mounted/helpers`、
+- API：无 DOM crate 内的 View、高层 element/mounted/helpers 或旧顶层 attribute
+  facade，
   `legacy-browser` 或 `legacy_timer`；
 - feature：`silex_dom`/`silex_view` 的 SSR check 不激活 web runtime；
 - wasm：check、no-run、真实 Firefox runner、nightly build-std 分开记录。

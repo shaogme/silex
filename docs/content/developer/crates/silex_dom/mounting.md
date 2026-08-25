@@ -45,8 +45,9 @@ app.mount(|context| {
 
 ## SSR 与 browser
 
-SSR 用 `SsrDom::new()` 建立内存 document，browser 用
-`BrowserDom::from_window()` 或显式 `BrowserDom::new(document)`。两者都可以
+SSR 用 `silex_dom::adapters::ssr::SsrDom::new()` 建立内存 document，browser 用
+`silex_dom::adapters::browser::BrowserDom::from_window()` 或显式
+`BrowserDom::new(document)`。两者都可以
 注入相同的 `DomContext`，但 node 不能跨 backend 混用。SSR serialization 只
 输出树与安全属性；listener 进入 hydration record，不进入 HTML。
 
@@ -59,4 +60,4 @@ SSR 用 `SsrDom::new()` 建立内存 document，browser 用
 - `MountInstance` 不能逃逸当前 scope。
 
 实现和测试位于 `crates/silex_view/src/mounted.rs`、
-`crates/silex_view/tests/ssr_mount.rs` 与 `crates/silex_dom/src/ssr.rs`。
+`crates/silex_view/tests/ssr_mount.rs` 与 `crates/silex_dom/src/adapters/ssr.rs`。

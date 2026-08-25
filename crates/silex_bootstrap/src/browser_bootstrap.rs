@@ -3,7 +3,9 @@ use crate::{
     UnmountOutcome,
 };
 use silex_core::{Runtime, SilexError, SilexResult};
-use silex_dom::{CleanupSink, DomContext, DomNode, browser::BrowserDom};
+use silex_dom::{
+    adapters::browser::BrowserDom, lifecycle::CleanupSink, model::DomNode, runtime::DomContext,
+};
 use silex_view::MountBuilderContext;
 use web_sys::{Element, Node, window};
 

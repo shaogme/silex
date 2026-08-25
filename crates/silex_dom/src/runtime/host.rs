@@ -4,7 +4,7 @@ use std::{
     rc::Rc,
 };
 
-use crate::error::DomResult;
+use crate::diagnostics::error::DomResult;
 
 /// Host capabilities consumed by low-level DOM adapters.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -94,7 +94,7 @@ impl Drop for HostResource<'_> {
 #[cfg(test)]
 mod tests {
     use super::{HostResource, HostResourceState};
-    use crate::error::{DomError, DomResult};
+    use crate::diagnostics::error::{DomError, DomResult};
     use std::{cell::Cell, rc::Rc};
 
     #[test]

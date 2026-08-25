@@ -32,6 +32,7 @@ serde_json = { workspace = true, optional = true }
 
 [dev-dependencies]
 gloo-timers.workspace = true
+silex_view = { workspace = true, features = ["browser"] }
 trybuild = "1.0"
 wasm-bindgen-test.workspace = true
 

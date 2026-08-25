@@ -1,8 +1,11 @@
 use crate::owner::{MountErrorHandler, MountOwnerToken};
 use crate::{MountInstance, View};
-use silex_core::{DomError, ReactiveError, SilexError, SilexErrorKind, SilexResult};
+use silex_core::{ReactiveError, SilexError, SilexErrorKind, SilexResult};
 use silex_dom::{
-    DomContext, DomElement, DomNode, DomResult, node_ref::NodeRef, tree::InsertRequest,
+    diagnostics::{DomError, DomResult},
+    lifecycle::node_ref::NodeRef,
+    model::{DomElement, DomNode},
+    runtime::{DomContext, InsertRequest},
 };
 use std::{
     cell::{Cell, RefCell},
@@ -107,9 +110,9 @@ impl MountAncestry {
     }
 
     pub fn closest_logical_element(&self, _selector: &str) -> SilexResult<Option<DomElement>> {
-        return Err(SilexError::from(DomError::Unsupported {
+        Err(SilexError::from(DomError::Unsupported {
             capability: "logical selector matching",
-        }));
+        }))
     }
 }
 

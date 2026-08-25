@@ -8,12 +8,11 @@ use silex_core::{
     CloseError, DisposeError, ErrorHandlerInput, OwnerAccess, OwnerHandle, Runtime, SilexError,
     SilexErrorKind, SilexResult,
 };
-use silex_dom::error::{
+use silex_dom::lifecycle::{
     CleanupFailure, CleanupFailureDiagnostic, CleanupOrigin, CleanupReport, CleanupSink,
     DropFailureReport,
 };
-use silex_dom::log::console_error;
-use silex_dom::{DomContext, DomNode};
+use silex_dom::{diagnostics::logging::console_error, model::DomNode, runtime::DomContext};
 use std::cell::RefCell;
 use std::fmt;
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -226,9 +225,7 @@ impl MountedApp {
     where
         F: for<'scope> FnOnce(&MountBuilderContext<'scope>) -> SilexResult<()>,
     {
-        if let Err(error) = self.validate_host() {
-            return Err(error);
-        }
+        self.validate_host()?;
         if self.state == MountedState::Poisoned {
             return Err(SilexError::from(poisoned_error()));
         }

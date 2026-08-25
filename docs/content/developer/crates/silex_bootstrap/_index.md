@@ -22,7 +22,7 @@ JavaScript owner。
 应用组件 / silex_html
           │ MountContext builder
           ▼
-      silex_dom::MountedApp
+      silex_view::MountedApp
           │ 应用级 boundary、owner、rollback
           ▼
   silex_bootstrap::AppHost
@@ -36,7 +36,7 @@ JavaScript owner。
 ```
 
 `AppHost` 的稳定核心依赖 `silex_core` 的 `Runtime`、`SilexError` 和
-`silex_dom` 的 `MountedApp`/`MountContext`。因此本 crate 的文档只说明宿主层
+`silex_view` 的 `MountedApp`/`MountContext`。因此本 crate 的文档只说明宿主层
 新增的状态和所有权；staging boundary、view owner、属性和 DOM 清理的底层
 语义见 [`silex_dom` 挂载事务](@/developer/crates/silex_dom/mounting.md) 与
 [`silex_dom` 生命周期](@/developer/crates/silex_dom/lifecycle.md)。

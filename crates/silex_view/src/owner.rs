@@ -3,9 +3,10 @@ use silex_core::{
     ErrorHandlerAnchor, ErrorHandlerInput, HandlerLease, OwnerAccess, OwnerChild, ReactiveError,
     SilexError, SilexErrorKind, SilexResult, unwind_safe,
 };
-use silex_dom::event::DomEvent;
-use silex_dom::host::HostResource;
-use silex_dom::node_ref::NodeRef;
+use silex_dom::{
+    diagnostics::logging::console_error, lifecycle::node_ref::NodeRef, model::event::DomEvent,
+    runtime::HostResource,
+};
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
@@ -570,7 +571,7 @@ impl<'scope> MountOwnerToken<'scope> {
         if self.context.cleanup_reporter.is_some() {
             self.state.report(error);
         } else {
-            silex_dom::log::console_error(format!("Silex owner close failure: {error:?}"));
+            console_error(format!("Silex owner close failure: {error:?}"));
         }
     }
 

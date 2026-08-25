@@ -3,7 +3,7 @@
 use js_sys::Promise;
 use silex_core::{ErrorHandlerInput, ErrorHandlerToken, OwnerAccess, Runtime};
 use silex_css::{CssPart, DynamicCss, DynamicStyleManager, IntoCssReactive, prelude::inject_style};
-use silex_dom::browser::BrowserDom;
+use silex_dom::adapters::browser::BrowserDom;
 use silex_view::attribute::{ApplyTarget, ApplyToDom};
 use silex_view::{MountContext, MountOwnerToken};
 use wasm_bindgen::JsCast;

@@ -5,7 +5,7 @@ use silex_core::{
     EffectPhase, ErrorHandlerInput, ErrorHandlerToken, OwnerAccess, Runtime, RxGet, SilexContext,
     SilexResult,
 };
-use silex_dom::{DomContext, DomNode, browser::BrowserDom};
+use silex_dom::{adapters::browser::BrowserDom, model::DomNode, runtime::DomContext};
 use silex_persist::{
     PersistExternalSync, PersistWriteMode, PersistenceState, Persistent, WriteDefault,
 };

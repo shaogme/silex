@@ -1764,7 +1764,6 @@ version = "0.1.0-beta.9"
 dependencies = [
  "gloo-timers",
  "silex",
- "silex_view",
  "wasm-bindgen",
  "wasm-bindgen-test",
 ]
@@ -1806,7 +1805,6 @@ version = "0.1.0-beta.9"
 dependencies = [
  "gloo-timers",
  "silex",
- "silex_view",
  "wasm-bindgen",
  "wasm-bindgen-test",
 ]
@@ -1983,7 +1981,6 @@ version = "0.1.0-beta.9"
 dependencies = [
  "gloo-timers",
  "silex",
- "silex_view",
  "wasm-bindgen",
  "wasm-bindgen-test",
  "web-sys",
@@ -2007,7 +2004,6 @@ dependencies = [
  "serde_json",
  "silex",
  "silex_macros",
- "silex_view",
  "wasm-bindgen",
  "wasm-bindgen-test",
 ]
@@ -2018,7 +2014,6 @@ version = "0.1.0-beta.9"
 dependencies = [
  "gloo-timers",
  "silex",
- "silex_view",
  "wasm-bindgen",
  "wasm-bindgen-test",
 ]
@@ -2028,7 +2023,6 @@ name = "silex_tailwind_example"
 version = "0.1.0-beta.9"
 dependencies = [
  "silex",
- "silex_view",
  "wasm-bindgen",
  "web-sys",
 ]
@@ -2046,7 +2040,6 @@ version = "0.1.0-beta.9"
 dependencies = [
  "gloo-timers",
  "silex",
- "silex_view",
  "wasm-bindgen",
  "wasm-bindgen-test",
  "web-sys",
