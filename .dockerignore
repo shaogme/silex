@@ -1,0 +1,9 @@
+.git
+.github
+target
+**/target
+node_modules
+**/node_modules
+docs/public
+tools/geckodriver
+.env
