@@ -46,7 +46,37 @@ pub mod dom {
 }
 
 pub mod view {
-    pub use silex_view::*;
+    pub use silex_view::{
+        app, attributes, elements, errors, events, flow, lifecycle, mount, prelude,
+    };
+    pub use silex_view::{
+        app::{MountBuilderContext, MountedApp},
+        attributes::{
+            ApplyTarget, Attr, AttrOp, AttributeBuilder, AttributeGroup, IntoStorable, KnownProp,
+            update_class_tokens,
+        },
+        elements::{AnyView, Element, Tag, TagMetadata, TagNamespace, TypedElement, text},
+        errors::{DisposeError, MountAvailability, MountError, RollbackError, ViewError},
+        events::{
+            DomEvent, DomRectData, Event, EventDescriptor, EventHandler, EventKind, EventSpec,
+            MouseEventData, PointerEventData, WithEventArg, WithoutEventArg, bind_window_event,
+        },
+        flow::{
+            AutoReactiveView, BranchEvaluation, BranchRenderContext, DynamicRenderer,
+            IndexedListView, RenderOnlyKeyedListView, RowUpdater, StableBranch,
+            StatefulKeyedListView,
+        },
+        lifecycle::{
+            MountCleanup, MountEffect, MountErrorHandler, MountOwner, MountOwnerContext,
+            MountOwnerToken, MountState, SharedCell,
+        },
+        mount::{
+            MountAncestry, MountContext, MountDomAction, MountInstance, MountTarget,
+            MountTransaction, MountTransactionState, Prop, PropFixed, PropInto, PropMissing, View,
+            ViewCons, ViewNil,
+        },
+    };
+    pub use silex_view::{chain, define_tag, group, view_match};
 }
 
 #[cfg(feature = "bootstrap")]
@@ -95,7 +125,14 @@ pub mod prelude {
     pub use silex_html::*;
     pub use silex_macros::*;
     pub use silex_router::*;
-    pub use silex_view::prelude::*;
+    pub use silex_view::prelude::{
+        AnyView, AriaAttributes, Attr, AttrOp, AttributeBuilder, AttributeGroup, BranchEvaluation,
+        BranchRenderContext, DomEvent, DomRectData, Element, Event, EventDescriptor, EventKind,
+        EventSpec, GlobalAttributes, GlobalEventAttributes, IntoStorable, MountAncestry,
+        MountBuilderContext, MountContext, MountDomAction, MountInstance, MountOwner,
+        MountOwnerToken, MountState, MountedApp, PointerEventData, Prop, PropFixed, PropMissing,
+        RowUpdater, Tag, TypedElement, View, ViewCons, ViewNil, chain,
+    };
 
     // Resolve ambiguous glob re-exports
     #[cfg(feature = "css")]
@@ -113,5 +150,5 @@ pub mod prelude {
     #[cfg(feature = "tw")]
     pub use silex_macros::{tw, tw_variants, tw_verbose};
     pub use silex_router::Link;
-    pub use silex_view::{View, text};
+    pub use silex_view::elements::text;
 }

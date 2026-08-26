@@ -18,12 +18,12 @@ use silex_hash::{
     css::{CssHasher, Normalized, encode_base36},
     css_hasher,
 };
-use silex_view::MountContext as ViewMountContext;
-use silex_view::attribute::{
+use silex_view::attributes::{
     ApplyTarget as ViewApplyTarget, ApplyToDom as ViewApplyToDom, IntoStorable as ViewIntoStorable,
     ReactiveBinding as ViewReactiveBinding, ReactiveBindingContext as ViewReactiveBindingContext,
     ReactiveBindingPlan as ViewReactiveBindingPlan,
 };
+use silex_view::mount::MountContext as ViewMountContext;
 use std::{
     borrow::Cow,
     fmt::{Display, Write},

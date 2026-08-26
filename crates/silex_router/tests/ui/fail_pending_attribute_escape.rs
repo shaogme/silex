@@ -1,5 +1,5 @@
 use silex_core::{Runtime, RxGet};
-use silex_view::attribute::AttrOp;
+use silex_view::attributes::AttrOp;
 
 fn require_static<T: 'static>(_: T) {}
 

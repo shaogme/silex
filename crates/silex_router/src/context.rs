@@ -5,7 +5,11 @@ use silex_core::{
     reactivity::{ReadSignal, StoredValue, WriteSignal},
     traits::RxGet,
 };
-use silex_view::{AnyView, DynamicRenderer, MountContext, MountInstance, View};
+use silex_view::{
+    elements::AnyView,
+    flow::DynamicRenderer,
+    mount::{MountContext, MountInstance, View},
+};
 use std::collections::HashMap;
 use std::rc::Rc;
 use wasm_bindgen::JsCast;

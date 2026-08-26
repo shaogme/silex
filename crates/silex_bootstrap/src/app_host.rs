@@ -9,7 +9,7 @@ use silex_dom::{
     model::DomNode,
     runtime::DomContext,
 };
-use silex_view::{MountBuilderContext, MountedApp};
+use silex_view::app::{MountBuilderContext, MountedApp};
 use std::{
     any::Any,
     panic::{AssertUnwindSafe, catch_unwind},

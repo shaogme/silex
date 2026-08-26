@@ -6,7 +6,7 @@ use silex_core::{Runtime, SilexError, SilexResult};
 use silex_dom::{
     adapters::browser::BrowserDom, lifecycle::CleanupSink, model::DomNode, runtime::DomContext,
 };
-use silex_view::MountBuilderContext;
+use silex_view::app::MountBuilderContext;
 use web_sys::{Element, Node, window};
 
 /// A browser convenience adapter around [`PageController`].

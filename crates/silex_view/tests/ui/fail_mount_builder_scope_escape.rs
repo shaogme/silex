@@ -1,4 +1,4 @@
-use silex_view::MountBuilderContext;
+use silex_view::app::MountBuilderContext;
 
 fn escape<'scope>(context: &MountBuilderContext<'scope>) -> &'scope MountBuilderContext<'scope> {
     context

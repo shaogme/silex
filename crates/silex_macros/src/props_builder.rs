@@ -386,7 +386,7 @@ impl BuilderContext {
         let __silex = crate::crate_path::silex();
         let __view = silex_view();
         let scope = self.owner_lifetime();
-        quote! { #__view::attribute::AttrOp<#scope> }
+        quote! { #__view::attributes::AttrOp<#scope> }
     }
 
     fn has_attrs(&self) -> bool {
@@ -475,7 +475,7 @@ impl BuilderContext {
         let initial_states: Vec<_> = self
             .prop_generic_idents
             .iter()
-            .map(|_| quote! { #__view::PropMissing })
+            .map(|_| quote! { #__view::mount::PropMissing })
             .collect();
         let builder_ty_initial = self.get_builder_ty(&initial_states);
 
@@ -494,7 +494,7 @@ impl BuilderContext {
             let ident = &field.ident;
             if field.attrs.attrs {
                 quote! {
-                    #ident: #__view::attribute::AttributeGroup::default()
+                    #ident: #__view::attributes::AttributeGroup::default()
                 }
             } else if !field.attrs.chained {
                 quote! { #ident }
@@ -569,14 +569,14 @@ impl BuilderContext {
             vec_item_ty.as_ref()
         {
             let setter_param = if field.attrs.render && is_any_view_type(item_ty) {
-                quote! { impl #__view::View<#scope> + #scope }
+                quote! { impl #__view::mount::View<#scope> + #scope }
             } else if field.attrs.into_trait || is_auto_into_type(item_ty) {
                 quote! { impl ::core::convert::Into<#item_ty> }
             } else {
                 quote! { #item_ty }
             };
             let setter_value = if field.attrs.render && is_any_view_type(item_ty) {
-                quote! { #__view::View::into_any(val) }
+                quote! { #__view::mount::View::into_any(val) }
             } else if field.attrs.into_trait || is_auto_into_type(item_ty) {
                 quote! { val.into() }
             } else {
@@ -593,7 +593,7 @@ impl BuilderContext {
                 quote! {
                     where
                         #render_fn: Fn(#(#render_fn_args),*) -> #render_view + #scope,
-                        #render_view: #__view::View<#scope> + #scope,
+                        #render_view: #__view::mount::View<#scope> + #scope,
                 },
             )
         } else if reactive_input {
@@ -613,7 +613,7 @@ impl BuilderContext {
             )
         } else {
             let setter_param = if is_any_view_type(ty) {
-                quote! { impl #__view::View<#scope> + #scope }
+                quote! { impl #__view::mount::View<#scope> + #scope }
             } else if field.attrs.render {
                 quote! { #ty }
             } else if field.attrs.into_trait || is_auto_into_type(ty) {
@@ -622,7 +622,7 @@ impl BuilderContext {
                 quote! { #ty }
             };
             let setter_value = if is_any_view_type(ty) {
-                quote! { #__view::View::into_any(val) }
+                quote! { #__view::mount::View::into_any(val) }
             } else if field.attrs.into_trait || is_auto_into_type(ty) {
                 quote! { val.into() }
             } else {
@@ -653,7 +653,7 @@ impl BuilderContext {
             let mut return_states = Vec::new();
             for (i, p) in self.prop_generic_idents.iter().enumerate() {
                 if i == req_index {
-                    return_states.push(quote! { #__view::PropFixed });
+                    return_states.push(quote! { #__view::mount::PropFixed });
                 } else {
                     return_states.push(quote! { #p });
                 }
@@ -742,7 +742,7 @@ impl BuilderContext {
         let fixed_states: Vec<_> = self
             .prop_generic_idents
             .iter()
-            .map(|_| quote! { #__view::PropFixed })
+            .map(|_| quote! { #__view::mount::PropFixed })
             .collect();
         let builder_ty_fixed = self.get_builder_ty(&fixed_states);
         let fields_destructure: Vec<_> = self.fields.iter().map(|field| &field.ident).collect();
@@ -802,7 +802,7 @@ impl BuilderContext {
                 quote! {
                     #ident: {
                         let _ = #ident;
-                        #__view::attribute::AttributeGroup(_pending_attrs)
+                        #__view::attributes::AttributeGroup::new(_pending_attrs)
                     }
                 }
             } else {
@@ -875,8 +875,8 @@ impl BuilderContext {
         };
 
         quote! {
-            impl #impl_generics #__view::View<#scope> for #product_ty #view_where_clause {
-                fn mount(&self, context: &#__view::MountContext<#scope>) -> #__silex::core::SilexResult<#__view::MountInstance<#scope>> {
+            impl #impl_generics #__view::mount::View<#scope> for #product_ty #view_where_clause {
+                fn mount(&self, context: &#__view::mount::MountContext<#scope>) -> #__silex::core::SilexResult<#__view::mount::MountInstance<#scope>> {
                     let mut product = self.clone();
                     #mount_body
                 }
@@ -890,12 +890,12 @@ impl BuilderContext {
         let scope = self.owner_lifetime();
 
         quote! {
-            fn build_attribute<__SilexValue>(mut self, target: #__view::attribute::ApplyTarget, value: __SilexValue) -> Self
+            fn build_attribute<__SilexValue>(mut self, target: #__view::attributes::ApplyTarget, value: __SilexValue) -> Self
             where
-                __SilexValue: #__view::attribute::IntoStorable<#scope>,
+                __SilexValue: #__view::attributes::IntoStorable<#scope>,
             {
                 self._pending_attrs.push(
-                    #__view::attribute::AttrOp::<#scope>::build(
+                    #__view::attributes::AttrOp::<#scope>::build(
                         value.into_storable(),
                         target,
                     )
@@ -905,13 +905,13 @@ impl BuilderContext {
 
             fn build_event<E, F, M>(mut self, event: E, callback: F) -> Self
             where
-                E: #__view::event::EventDescriptor + 'static,
-                F: #__view::event::EventHandler<#scope, M> + Clone + #scope,
+                E: #__view::events::EventDescriptor + 'static,
+                F: #__view::events::EventHandler<#scope, M> + Clone + #scope,
             {
                 let event = event.clone();
                 self._pending_attrs.push(
-                    #__view::attribute::AttrOp::<#scope>::new_scoped(move |el, context| {
-                        #__view::event::bind_event(
+                    #__view::attributes::AttrOp::<#scope>::new_scoped(move |el, context| {
+                        #__view::events::bind_event(
                             context,
                             el,
                             event,
@@ -944,8 +944,8 @@ impl BuilderContext {
         let methods = self.generate_attribute_builder_methods();
         let carrier_impls = self.generate_carrier_impls();
         let attrs_method = quote! {
-            pub fn attrs(mut self, group: #__view::attribute::AttributeGroup<#scope>) -> Self {
-                self._pending_attrs.extend(group.0);
+            pub fn attrs(mut self, group: #__view::attributes::AttributeGroup<#scope>) -> Self {
+                self._pending_attrs.extend(group.into_ops());
                 self
             }
         };
@@ -955,7 +955,7 @@ impl BuilderContext {
                 #attrs_method
             }
 
-            impl #builder_generics_decl #__view::attribute::AttributeBuilder<#scope> for #builder_ty_current #builder_where_clause {
+            impl #builder_generics_decl #__view::attributes::AttributeBuilder<#scope> for #builder_ty_current #builder_where_clause {
                 #methods
             }
 
@@ -1009,7 +1009,7 @@ impl BuilderContext {
         let initial_states: Vec<_> = self
             .prop_generic_idents
             .iter()
-            .map(|_| quote! { #__view::PropMissing })
+            .map(|_| quote! { #__view::mount::PropMissing })
             .collect();
         let builder_ty_initial = self.get_builder_ty(&initial_states);
 
@@ -1023,7 +1023,7 @@ impl BuilderContext {
             let ident = &field.ident;
             let ty = &field.ty;
             if is_any_view_type(ty) {
-                quote! { #ident: impl #__view::View<#scope> + #scope }
+                quote! { #ident: impl #__view::mount::View<#scope> + #scope }
             } else if field.attrs.into_trait || is_auto_into_type(ty) {
                 quote! { #ident: impl ::core::convert::Into<#ty> }
             } else {
@@ -1035,7 +1035,7 @@ impl BuilderContext {
             let ident = &field.ident;
             let ty = &field.ty;
             if is_any_view_type(ty) {
-                quote! { #__view::View::into_any(#ident) }
+                quote! { #__view::mount::View::into_any(#ident) }
             } else if field.attrs.into_trait || is_auto_into_type(ty) {
                 quote! { #ident.into() }
             } else {
@@ -1079,7 +1079,7 @@ fn field_value_transform(field: &FieldSpec, input: TokenStream2) -> TokenStream2
     let __view = silex_view();
     let ty = &field.ty;
     if field.attrs.render && is_any_view_type(ty) {
-        quote! { #__view::View::into_any(#input) }
+        quote! { #__view::mount::View::into_any(#input) }
     } else if field.attrs.into_trait || (is_auto_into_type(ty) && !is_any_view_type(ty)) {
         quote! { ::core::convert::Into::into(#input) }
     } else {

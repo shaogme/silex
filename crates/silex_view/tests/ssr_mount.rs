@@ -4,12 +4,14 @@ use silex_dom::{
     adapters::ssr::{SerializeOptions, SsrDom},
     lifecycle::CleanupSink,
 };
-use silex_view::attribute::{AttributeBuilder, GlobalAttributes, GlobalEventAttributes};
-use silex_view::element::Element;
-use silex_view::event;
-use silex_view::{AnyView, MountedApp, RenderOnlyKeyedListView};
+use silex_view::app::MountedApp;
+use silex_view::attributes::{AttributeBuilder, GlobalAttributes, GlobalEventAttributes};
+use silex_view::elements::AnyView;
+use silex_view::elements::Element;
+use silex_view::events;
+use silex_view::flow::RenderOnlyKeyedListView;
 use std::rc::Rc;
-use std::{cell::Cell, cell::RefCell, marker::PhantomData};
+use std::{cell::Cell, cell::RefCell};
 
 fn app(dom: &SsrDom) -> MountedApp {
     let host = dom.document().expect("SSR document").node().clone();
@@ -62,7 +64,7 @@ fn failed_builder_rolls_back_staging_and_remains_retryable() {
             context.mount_unit(
                 Element::with_child("div", "temporary")
                     .node_ref(node_ref.clone())
-                    .on(event::click, || Ok(())),
+                    .on(events::click, || Ok(())),
                 handler.view(),
             )?;
             assert_eq!(dom.event_records().len(), 1);
@@ -109,7 +111,7 @@ fn ssr_listener_is_recorded_and_owner_cleanup_is_idempotent() {
     mounted
         .mount(|context| {
             let handler = context.access().error_handler(|_| {}).expect("handler");
-            let view = Element::with_child("button", "go").on(event::click, || Ok(()));
+            let view = Element::with_child("button", "go").on(events::click, || Ok(()));
             context.mount_unit(view, handler.view())
         })
         .expect("mount should succeed");
@@ -168,7 +170,7 @@ fn owner_cleanup_orders_binding_event_lease_and_dom_removal() {
             context.mount_unit(
                 Element::with_child("button", "go")
                     .node_ref(node_ref)
-                    .on(event::click, || Ok(())),
+                    .on(events::click, || Ok(())),
                 handler.view(),
             )?;
             *raw_node.borrow_mut() = node_ref_for_snapshot
@@ -201,7 +203,7 @@ fn poisoned_mount_does_not_leave_ssr_event_records() {
         .mount(|context| {
             let handler = context.access().error_handler(|_| {}).expect("handler");
             context.mount_unit(
-                Element::with_child("button", "panic").on(event::click, || Ok(())),
+                Element::with_child("button", "panic").on(events::click, || Ok(())),
                 handler.view(),
             )?;
             panic!("intentional poison");
@@ -264,15 +266,14 @@ fn keyed_rows_keep_identity_order_across_reactive_reorder() {
             let handler = context.access().error_handler(|_| {}).expect("handler");
             let signal: Signal<'_, Vec<i32>> =
                 context.access().signal(vec![1, 2, 3]).expect("signal");
-            let list = RenderOnlyKeyedListView {
-                each: signal,
-                key_fn: Rc::new(|value: &i32| *value),
-                view_fn: Rc::new(|value: i32, _| {
+            let list = RenderOnlyKeyedListView::new(
+                signal,
+                Rc::new(|value: &i32| *value),
+                Rc::new(|value: i32, _| {
                     AnyView::from(Element::with_child("li", value.to_string()))
                 }),
-                error_handler: None,
-                _marker: PhantomData,
-            };
+                None,
+            );
             context.mount_unit(list, handler.view())?;
             signal.set(vec![3, 2, 1])
         })

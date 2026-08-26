@@ -13,16 +13,16 @@ use silex_dom::{
     },
     runtime::{HostResourceState, RangeRequest},
 };
-use silex_view::attribute::{AttributeBuilder, GlobalAttributes, GlobalEventAttributes};
-use silex_view::dynamic::BranchEvaluation;
-use silex_view::element::Element;
-use silex_view::event::{Event as ViewEvent, bind_window_event};
-use silex_view::{
-    AnyView, DomEvent, IndexedListView, MountedApp, RenderOnlyKeyedListView, StableBranch,
-    StatefulKeyedListView,
+use silex_view::app::MountedApp;
+use silex_view::attributes::{AttributeBuilder, GlobalAttributes, GlobalEventAttributes};
+use silex_view::elements::{AnyView, Element};
+use silex_view::events::{
+    DomEvent, Event as ViewEvent, EventKind as ViewEventKind, bind_window_event,
+};
+use silex_view::flow::{
+    BranchEvaluation, IndexedListView, RenderOnlyKeyedListView, StableBranch, StatefulKeyedListView,
 };
 use std::cell::Cell;
-use std::marker::PhantomData;
 use std::rc::Rc;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::JsValue;
@@ -262,12 +262,12 @@ async fn browser_mount_dom_action_focuses_node_ref_and_closes_events() {
                         element_calls_for_handler.set(element_calls_for_handler.get() + 1);
                         Ok(())
                     })
-                    .apply(silex_view::AttrOp::custom(
+                    .apply(silex_view::attributes::AttrOp::custom(
                         move |_element, mount_context| {
                             let window_calls_for_handler = window_calls_for_attribute.clone();
                             bind_window_event(
                                 mount_context,
-                                ViewEvent::new("resize", silex_view::EventKind::Custom),
+                                ViewEvent::new("resize", ViewEventKind::Custom),
                                 move |_| {
                                     window_calls_for_handler
                                         .set(window_calls_for_handler.get() + 1);
@@ -604,16 +604,15 @@ async fn browser_dynamic_views_and_keyed_rows_keep_dom_identity() {
 
                 let values: Signal<'_, Vec<i32>> =
                     context.access().signal(vec![1, 2, 3]).expect("list signal");
-                let list = StatefulKeyedListView {
-                    each: values,
-                    key_fn: Rc::new(|value: &i32| *value),
-                    view_fn: Rc::new(|value: i32, _index, updater| {
+                let list = StatefulKeyedListView::new(
+                    values,
+                    Rc::new(|value: &i32| *value),
+                    Rc::new(|value: i32, _index, updater| {
                         assert!(updater.bind(|_, _| Ok(())));
                         AnyView::from(Element::with_child("li", value.to_string()))
                     }),
-                    error_handler: None,
-                    _marker: PhantomData,
-                };
+                    None,
+                );
                 context.mount_unit(list, handler.view())?;
                 let update = Element::with_child("button", "reorder").on_click(move |_| {
                     dynamic_value.set(String::from("after"))?;
@@ -693,10 +692,10 @@ async fn browser_stateful_keyed_rows_keep_multi_node_identity_events_and_nested_
                 let list_values = values;
                 let list_labels = labels;
                 let list_clicks = row_clicks.clone();
-                let list = StatefulKeyedListView {
-                    each: list_values,
-                    key_fn: Rc::new(|value: &i32| *value),
-                    view_fn: Rc::new(move |value: i32, _index, updater| {
+                let list = StatefulKeyedListView::new(
+                    list_values,
+                    Rc::new(|value: &i32| *value),
+                    Rc::new(move |value: i32, _index, updater| {
                         assert!(updater.bind(|_, _| Ok(())));
                         let nested_labels = list_labels;
                         let row_clicks = list_clicks.clone();
@@ -720,9 +719,8 @@ async fn browser_stateful_keyed_rows_keep_multi_node_identity_events_and_nested_
                             row_button,
                         ])
                     }),
-                    error_handler: None,
-                    _marker: PhantomData,
-                };
+                    None,
+                );
                 context.mount_unit(list, handler.view())?;
                 let reorder_values = values;
                 let reorder_labels = labels;
@@ -865,16 +863,15 @@ async fn browser_stateful_keyed_duplicate_keys_keep_previous_rows() {
                 let values: Signal<'_, Vec<i32>> =
                     context.access().signal(vec![1, 2]).expect("list signal");
                 let list_values = values;
-                let list = StatefulKeyedListView {
-                    each: list_values,
-                    key_fn: Rc::new(|value: &i32| *value),
-                    view_fn: Rc::new(|value: i32, _index, updater| {
+                let list = StatefulKeyedListView::new(
+                    list_values,
+                    Rc::new(|value: &i32| *value),
+                    Rc::new(|value: i32, _index, updater| {
                         assert!(updater.bind(|_, _| Ok(())));
                         AnyView::from(Element::with_child("li", value.to_string()))
                     }),
-                    error_handler: None,
-                    _marker: PhantomData,
-                };
+                    None,
+                );
                 context.mount_unit(list, handler.view())?;
                 let update_values = values;
                 let update = Element::with_child("button", "duplicate")
@@ -917,16 +914,15 @@ async fn browser_stateful_keyed_insert_delete_preserves_reused_identity() {
             let values: Signal<'_, Vec<i32>> =
                 context.access().signal(vec![1, 2]).expect("list signal");
             let list_values = values;
-            let list = StatefulKeyedListView {
-                each: list_values,
-                key_fn: Rc::new(|value: &i32| *value),
-                view_fn: Rc::new(|value: i32, _index, updater| {
+            let list = StatefulKeyedListView::new(
+                list_values,
+                Rc::new(|value: &i32| *value),
+                Rc::new(|value: i32, _index, updater| {
                     assert!(updater.bind(|_, _| Ok(())));
                     AnyView::from(Element::with_child("li", format!("row-{value}")))
                 }),
-                error_handler: None,
-                _marker: PhantomData,
-            };
+                None,
+            );
             context.mount_unit(list, handler.view())?;
             let insert_values = values;
             let insert = Element::with_child("button", "insert")
@@ -1054,13 +1050,12 @@ async fn browser_indexed_list_updates_by_position_and_disposes_removed_rows() {
             let handler = context.access().error_handler(|_| {}).expect("handler");
             let values: Signal<'_, Vec<i32>> =
                 context.access().signal(vec![1, 2]).expect("list signal");
-            let list = IndexedListView {
-                each: values,
-                view_fn: Rc::new(|value: i32, index| {
+            let list = IndexedListView::new(
+                values,
+                Rc::new(|value: i32, index| {
                     AnyView::from(Element::with_child("li", format!("{index}:{value}")))
                 }),
-                _marker: PhantomData,
-            };
+            );
             context.mount_unit(list, handler.view())?;
             let update_values = values;
             let update = Element::with_child("button", "update")
@@ -1103,15 +1098,14 @@ async fn browser_render_only_keyed_list_reorders_content() {
             let handler = context.access().error_handler(|_| {}).expect("handler");
             let values: Signal<'_, Vec<i32>> =
                 context.access().signal(vec![1, 2, 3]).expect("list signal");
-            let list = RenderOnlyKeyedListView {
-                each: values,
-                key_fn: Rc::new(|value: &i32| *value),
-                view_fn: Rc::new(|value: i32, _| {
+            let list = RenderOnlyKeyedListView::new(
+                values,
+                Rc::new(|value: &i32| *value),
+                Rc::new(|value: i32, _| {
                     AnyView::from(Element::with_child("li", value.to_string()))
                 }),
-                error_handler: None,
-                _marker: PhantomData,
-            };
+                None,
+            );
             context.mount_unit(list, handler.view())?;
             let reorder_values = values;
             let reorder = Element::with_child("button", "reorder")
@@ -1231,10 +1225,10 @@ async fn browser_stateful_keyed_updater_panic_preserves_previous_dom_and_order()
                     ])
                     .expect("rollback signal");
                 let list_values = values;
-                let list = StatefulKeyedListView {
-                    each: list_values,
-                    key_fn: Rc::new(|value: &RollbackRow| value.id),
-                    view_fn: Rc::new(|value: RollbackRow, _index, updater| {
+                let list = StatefulKeyedListView::new(
+                    list_values,
+                    Rc::new(|value: &RollbackRow| value.id),
+                    Rc::new(|value: RollbackRow, _index, updater| {
                         let label = value.label;
                         assert!(updater.bind(|next: RollbackRow, _| {
                             if next.label == "error" {
@@ -1247,9 +1241,8 @@ async fn browser_stateful_keyed_updater_panic_preserves_previous_dom_and_order()
                         }));
                         AnyView::from(Element::with_child("li", label))
                     }),
-                    error_handler: None,
-                    _marker: PhantomData,
-                };
+                    None,
+                );
                 context.mount_unit(list, handler.view())?;
                 let error_values = values;
                 let error_update = Element::with_child("button", "error")

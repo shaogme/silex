@@ -9,9 +9,10 @@ use silex::core::{
 use silex::css::types::{Hex, hex, px};
 use silex::macros::{classes, css, global, styled, tw};
 use silex_dom::adapters::browser::BrowserDom;
-use silex_view::AnyView;
-use silex_view::attribute::{AttributeBuilder, GlobalAttributes};
-use silex_view::{MountContext, MountInstance, MountOwnerToken, View};
+use silex_view::attributes::{AttributeBuilder, GlobalAttributes};
+use silex_view::elements::AnyView;
+use silex_view::lifecycle::MountOwnerToken;
+use silex_view::mount::{MountContext, MountInstance, View};
 use wasm_bindgen::JsValue;
 use wasm_bindgen_futures::JsFuture;
 use wasm_bindgen_test::*;

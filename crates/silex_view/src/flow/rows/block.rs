@@ -1,6 +1,12 @@
-use crate::context::{MountContext, MountTarget, MountTransaction};
-use crate::dynamic::BranchRenderContext;
-use crate::owner::{MountErrorHandler, MountOwner, MountOwnerToken};
+use crate::flow::context::BranchRenderContext;
+use crate::flow::rows::{
+    cleanup::{close_scope, panic_message},
+    range::RangeHandle,
+    renderer::{RowRenderContext, RowRenderer},
+    updater::RowUpdater,
+};
+use crate::kernel::{MountContext, MountTarget, MountTransaction};
+use crate::lifecycle::{MountErrorHandler, MountOwner, MountOwnerToken};
 use silex_core::{
     CloseError, ClosePhase, CloseSource, CloseTransaction, EffectPhase, OwnerChild, ReactiveError,
     SilexError, SilexErrorKind, SilexResult,
@@ -8,243 +14,15 @@ use silex_core::{
 use silex_dom::{
     diagnostics::DomError,
     model::{DomNode, NodeKind},
-    runtime::{DomContext, DomRange, InsertRequest, RangeRequest},
+    runtime::InsertRequest,
 };
 use std::{
-    cell::{Cell, RefCell},
-    panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
+    cell::RefCell,
+    panic::{AssertUnwindSafe, catch_unwind},
     rc::Rc,
 };
 
-type RowCallback<'scope, T> = Box<dyn FnMut(T, usize) -> SilexResult<()> + 'scope>;
-
-struct RowUpdaterState<'scope, T> {
-    generation: Cell<u64>,
-    callback: RefCell<Option<RowCallback<'scope, T>>>,
-}
-
-/// 带 generation 的 owner-bound row update capability。
-pub struct RowUpdater<'scope, T> {
-    state: Rc<RowUpdaterState<'scope, T>>,
-    generation: u64,
-}
-
-impl<'scope, T> Clone for RowUpdater<'scope, T> {
-    fn clone(&self) -> Self {
-        Self {
-            state: self.state.clone(),
-            generation: self.generation,
-        }
-    }
-}
-
-impl<'scope, T> RowUpdater<'scope, T> {
-    pub(crate) fn new() -> Self {
-        Self {
-            state: Rc::new(RowUpdaterState {
-                generation: Cell::new(0),
-                callback: RefCell::new(None),
-            }),
-            generation: 0,
-        }
-    }
-    pub fn bind<F>(&self, callback: F) -> bool
-    where
-        F: FnMut(T, usize) -> SilexResult<()> + 'scope,
-    {
-        if !self.is_generation_active() {
-            return false;
-        }
-        let mut slot = self.state.callback.borrow_mut();
-        if slot.is_some() {
-            return false;
-        }
-        *slot = Some(Box::new(callback));
-        true
-    }
-    pub fn update(&self, item: T, index: usize) -> SilexResult<()> {
-        if !self.is_generation_active() {
-            return Err(SilexError::fatal(SilexErrorKind::Framework(
-                "stateful row updater is no longer active".into(),
-            )));
-        }
-        let Some(mut callback) = self.state.callback.borrow_mut().take() else {
-            return Err(SilexError::fatal(SilexErrorKind::Framework(
-                "stateful row updater has no callback".into(),
-            )));
-        };
-        let result = catch_unwind(AssertUnwindSafe(|| callback(item, index)));
-        if self.is_generation_active() && self.state.callback.borrow().is_none() {
-            *self.state.callback.borrow_mut() = Some(callback);
-        }
-        match result {
-            Ok(result) => result,
-            Err(panic) => resume_unwind(panic),
-        }
-    }
-    pub fn is_active(&self) -> bool {
-        self.is_generation_active() && self.state.callback.borrow().is_some()
-    }
-    fn is_generation_active(&self) -> bool {
-        self.state.generation.get() == self.generation
-    }
-    pub(crate) fn invalidate(&self) {
-        if self.is_generation_active() {
-            self.state.generation.set(self.generation.wrapping_add(1));
-        }
-        let _ = self.state.callback.borrow_mut().take();
-    }
-}
-
-pub(crate) struct RowRenderContext<'scope, T> {
-    pub(crate) item: T,
-    pub(crate) index: usize,
-    pub(crate) context: MountContext<'scope>,
-    pub(crate) branch_context: Option<BranchRenderContext<'scope>>,
-    pub(crate) updater: RowUpdater<'scope, T>,
-}
-
-pub(crate) struct RowRenderer<'scope, T> {
-    inner: Rc<dyn Fn(RowRenderContext<'scope, T>) -> SilexResult<()> + 'scope>,
-}
-impl<'scope, T> Clone for RowRenderer<'scope, T> {
-    fn clone(&self) -> Self {
-        Self {
-            inner: self.inner.clone(),
-        }
-    }
-}
-impl<'scope, T> RowRenderer<'scope, T> {
-    pub(crate) fn new<F>(render: F) -> Self
-    where
-        F: Fn(RowRenderContext<'scope, T>) -> SilexResult<()> + 'scope,
-    {
-        Self {
-            inner: Rc::new(render),
-        }
-    }
-    pub(crate) fn call(&self, args: RowRenderContext<'scope, T>) -> SilexResult<()> {
-        (self.inner)(args)
-    }
-}
-
-#[derive(Clone)]
-pub(crate) struct RangeHandle {
-    pub(crate) context: DomContext,
-    pub(crate) start: DomNode,
-    pub(crate) end: DomNode,
-}
-
-struct RangeGuard(Option<RangeHandle>);
-impl RangeGuard {
-    fn new(range: RangeHandle) -> Self {
-        Self(Some(range))
-    }
-    fn disarm(&mut self) {
-        self.0 = None;
-    }
-}
-impl Drop for RangeGuard {
-    fn drop(&mut self) {
-        if let Some(range) = self.0.take() {
-            let _ = range.remove();
-        }
-    }
-}
-
-impl RangeHandle {
-    pub(crate) fn detached(context: &DomContext, label: &str) -> SilexResult<Self> {
-        let fragment = context.create_fragment()?;
-        Self::append(context, &fragment, label)
-    }
-    pub(crate) fn append(context: &DomContext, parent: &DomNode, label: &str) -> SilexResult<Self> {
-        let start = context.create_comment(format!("{label}-start"))?;
-        let end = context.create_comment(format!("{label}-end"))?;
-        context.append(parent, &start)?;
-        if let Err(error) = context.append(parent, &end) {
-            let _ = context.remove(&start);
-            return Err(error.into());
-        }
-        Ok(Self {
-            context: context.clone(),
-            start,
-            end,
-        })
-    }
-    pub(crate) fn at_target(target: &MountTarget, label: &str) -> SilexResult<Self> {
-        match target {
-            MountTarget::Append { context, parent } => Self::append(context, parent, label),
-            MountTarget::Before { context, reference } => Self::before(context, reference, label),
-        }
-    }
-    pub(crate) fn before(
-        context: &DomContext,
-        reference: &DomNode,
-        label: &str,
-    ) -> SilexResult<Self> {
-        let parent = context
-            .parent(reference)?
-            .ok_or_else(|| SilexError::from(DomError::NoParent))?;
-        let start = context.create_comment(format!("{label}-start"))?;
-        let end = context.create_comment(format!("{label}-end"))?;
-        context.insert_before(InsertRequest::before(&parent, &start, reference))?;
-        if let Err(error) = context.insert_before(InsertRequest::before(&parent, &end, reference)) {
-            let _ = context.remove(&start);
-            return Err(error.into());
-        }
-        Ok(Self {
-            context: context.clone(),
-            start,
-            end,
-        })
-    }
-    pub(crate) fn parent(&self) -> SilexResult<DomNode> {
-        self.context
-            .parent(&self.start)?
-            .ok_or_else(|| SilexError::from(DomError::NoParent))
-    }
-
-    pub(crate) fn nodes(&self) -> SilexResult<Vec<DomNode>> {
-        let parent = self.parent()?;
-        self.context
-            .range(RangeRequest {
-                parent,
-                start: self.start.clone(),
-                end: self.end.clone(),
-            })?
-            .nodes()
-            .map_err(Into::into)
-    }
-
-    pub(crate) fn dom_range(&self) -> SilexResult<DomRange> {
-        let parent = self.parent()?;
-        self.context
-            .range(RangeRequest {
-                parent,
-                start: self.start.clone(),
-                end: self.end.clone(),
-            })
-            .map_err(Into::into)
-    }
-
-    pub(crate) fn remove(&self) -> SilexResult<()> {
-        if self.context.parent(&self.start)?.is_none() {
-            return Ok(());
-        }
-        self.dom_range()?.remove().map_err(Into::into)
-    }
-
-    fn initial_state(&self) -> SilexResult<RowState> {
-        let parent = self.parent()?;
-        if parent.kind() == NodeKind::Fragment {
-            Ok(RowState::Detached)
-        } else {
-            Ok(RowState::Mounted)
-        }
-    }
-}
-
-enum RowState {
+pub(crate) enum RowState {
     Detached,
     Mounted,
     Disposed,
@@ -329,7 +107,7 @@ impl<'scope, T: Clone + 'scope> RowBlock<'scope, T> {
         config: RowBlockConfig<'scope, T>,
     ) -> SilexResult<Self> {
         let range = config.range.clone();
-        let mut guard = RangeGuard::new(range);
+        let mut guard = range.guard();
         let mut row = Self::empty(owner, config)?;
         let item = row.item.clone();
         let index = row.index;
@@ -348,7 +126,7 @@ impl<'scope, T: Clone + 'scope> RowBlock<'scope, T> {
             )));
         }
         row.ensure_invariant()?;
-        guard.disarm();
+        RangeHandle::disarm_guard(&mut guard);
         Ok(row)
     }
 
@@ -368,6 +146,7 @@ impl<'scope, T: Clone + 'scope> RowBlock<'scope, T> {
         }
         result
     }
+
     pub(crate) fn snapshot(&self) -> (T, usize) {
         (self.item.clone(), self.index)
     }
@@ -502,12 +281,10 @@ impl<'scope, T> RowBlock<'scope, T> {
     ) -> SilexResult<()> {
         self.ensure_usable()?;
         self.ensure_invariant()?;
-        let result = self
-            .range
+        self.range
             .dom_range()?
             .move_before(target_parent, reference)
-            .map_err(SilexError::from);
-        result?;
+            .map_err(SilexError::from)?;
         self.state = RowState::Mounted;
         self.ensure_invariant()
     }
@@ -595,58 +372,10 @@ impl<'scope, T> RowBlock<'scope, T> {
     }
 }
 
-fn close_scope<'scope>(
-    scope: MountOwnerToken<'scope>,
-    reporter: &MountOwnerToken<'scope>,
-) -> Result<(), CloseError> {
-    match catch_unwind(AssertUnwindSafe(|| scope.close())) {
-        Ok(result) => result,
-        Err(panic) => {
-            let error = CloseError::from_panic(panic);
-            reporter.report_close_error(error.clone());
-            Err(error)
-        }
-    }
-}
-fn panic_message(prefix: &str, panic: Box<dyn std::any::Any + Send>) -> String {
-    if let Some(value) = panic.downcast_ref::<&str>() {
-        format!("{prefix}: {value}")
-    } else if let Some(value) = panic.downcast_ref::<String>() {
-        format!("{prefix}: {value}")
-    } else {
-        format!("{prefix}: unknown panic")
-    }
-}
-
 impl<T> Drop for RowBlock<'_, T> {
     fn drop(&mut self) {
         if let Err(error) = self.dispose() {
             self.row_scope.report_close_error(error);
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::RowUpdater;
-    use std::cell::Cell;
-    use std::rc::Rc;
-
-    #[test]
-    fn stale_updater_is_inert_and_reentrant_dispatch_is_safe() {
-        let calls = Rc::new(Cell::new(0));
-        let updater = RowUpdater::new();
-        let stale = updater.clone();
-        let reentrant = updater.clone();
-        let calls_for_callback = calls.clone();
-        assert!(updater.bind(move |_, _| {
-            calls_for_callback.set(calls_for_callback.get() + 1);
-            assert!(reentrant.update(2, 0).is_err());
-            Ok(())
-        }));
-        assert!(stale.update(1, 0).is_ok());
-        updater.invalidate();
-        assert!(stale.update(2, 0).is_err());
-        assert_eq!(calls.get(), 1);
     }
 }

@@ -6,7 +6,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         use silex_bootstrap::AppHost;
         use silex_core::{BootstrapError, Runtime, SilexError};
         use silex_dom::lifecycle::CleanupSink;
-        use silex_view::Element;
+        use silex_view::elements::Element;
         use web_sys::Node;
 
         let window = web_sys::window().ok_or_else(|| {

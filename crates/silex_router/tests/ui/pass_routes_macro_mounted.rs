@@ -1,5 +1,5 @@
 use silex_router::macros::router;
-use silex_view::AnyView;
+use silex_view::elements::AnyView;
 
 router! {
     enum UsersRoute {

@@ -1,15 +1,14 @@
 use silex_core::reactivity::Signal;
 use silex_core::{ReactiveError, Runtime, RxGet, SilexError, SilexErrorKind};
 use silex_dom::{adapters::ssr::SsrDom, lifecycle::CleanupSink};
-use silex_view::attribute::{AttributeBuilder, GlobalAttributes, GlobalEventAttributes};
-use silex_view::dynamic::{BranchEvaluation, DynamicRenderer};
-use silex_view::element::{Element, Tag, TagMetadata, TagNamespace, TypedElement};
-use silex_view::{
-    AnyView, IndexedListView, MountContext, MountInstance, MountedApp, RenderOnlyKeyedListView,
-    StableBranch, View,
-};
+use silex_view::app::MountedApp;
+use silex_view::attributes::{AttributeBuilder, GlobalAttributes, GlobalEventAttributes};
+use silex_view::elements::AnyView;
+use silex_view::elements::{Element, Tag, TagMetadata, TagNamespace, TypedElement};
+use silex_view::flow::{BranchEvaluation, DynamicRenderer};
+use silex_view::flow::{IndexedListView, RenderOnlyKeyedListView, StableBranch};
+use silex_view::mount::{MountContext, MountInstance, View};
 use std::cell::Cell;
-use std::marker::PhantomData;
 use std::rc::Rc;
 
 fn app(dom: &SsrDom) -> MountedApp {
@@ -440,13 +439,12 @@ fn indexed_list_updates_length_and_disposes_with_the_app() {
             let handler = context.access().error_handler(|_| {}).expect("handler");
             let values: Signal<'_, Vec<i32>> =
                 context.access().signal(vec![1, 2]).expect("list signal");
-            let list = IndexedListView {
-                each: values,
-                view_fn: Rc::new(|value: i32, index| {
+            let list = IndexedListView::new(
+                values,
+                Rc::new(|value: i32, index| {
                     AnyView::from(Element::with_child("li", format!("{index}:{value}")))
                 }),
-                _marker: PhantomData,
-            };
+            );
             context.mount_unit(list, handler.view())?;
             values.set(vec![3, 4, 5])
         })
@@ -470,15 +468,14 @@ fn render_only_keyed_list_updates_rows_when_reordered() {
             let handler = context.access().error_handler(|_| {}).expect("handler");
             let values: Signal<'_, Vec<i32>> =
                 context.access().signal(vec![1, 2, 3]).expect("list signal");
-            let list = RenderOnlyKeyedListView {
-                each: values,
-                key_fn: Rc::new(|value: &i32| *value),
-                view_fn: Rc::new(|value: i32, index| {
+            let list = RenderOnlyKeyedListView::new(
+                values,
+                Rc::new(|value: &i32| *value),
+                Rc::new(|value: i32, index| {
                     AnyView::from(Element::with_child("li", format!("{index}:{value}")))
                 }),
-                error_handler: None,
-                _marker: PhantomData,
-            };
+                None,
+            );
             context.mount_unit(list, handler.view())?;
             values.set(vec![3, 1, 2])
         })

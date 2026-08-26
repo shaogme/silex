@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use silex::prelude::*;
+use silex::view::events;
 use silex::view::{BranchEvaluation, StableBranch};
 
 use crate::css::AppTheme;
@@ -113,7 +114,7 @@ pub fn HttpClientDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
             input()
                 .attr("type", "number")
                 .prop("value", post_id)
-                .on(event::input, move |e: DomEvent| {
+                .on(events::input, move |e: DomEvent| {
                     if let Ok(id) = e.input_value().unwrap_or_default().parse::<i32>() {
                         post_id.set(id)?;
                     }
@@ -141,7 +142,7 @@ pub fn HttpClientDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
                         .background(AppTheme::SURFACE)?
                         .color(AppTheme::TEXT)?
                 ),
-            button("Refresh").on(event::click, move |_| {
+            button("Refresh").on(events::click, move |_| {
                 post_resource.refetch()?;
                 Ok(())
             }),
@@ -230,7 +231,7 @@ pub fn HttpClientDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
                         .width(px(300))?
                 ),
                 button("Submit Custom Post")
-                    .on(event::click, move |_| {
+                    .on(events::click, move |_| {
                         create_post_mutation.mutate(CreatePostInput {
                             title: new_title.get()?,
                             body: new_body.get()?,
@@ -342,7 +343,7 @@ pub fn WebSocketDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> + 'scope
                     .color(AppTheme::TEXT)?
             ),
             button(rx!(ctx; if *$is_connected { "Disconnect" } else { "Connect" })?)
-                .on(event::click, move |_| {
+                .on(events::click, move |_| {
                     socket.toggle().map_err(|error| {
                         SilexError::recoverable(SilexErrorKind::Framework(error.to_string()))
                     })?;
@@ -372,7 +373,7 @@ pub fn WebSocketDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> + 'scope
                     input()
                         .placeholder("Send message (Press Enter)...")
                         .bind_value(input_text)
-                        .on(event::keydown, move |e: DomEvent| {
+                        .on(events::keydown, move |e: DomEvent| {
                             if e.key().as_deref() == Some("Enter") {
                                 send_message()?;
                             }
@@ -388,7 +389,7 @@ pub fn WebSocketDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> + 'scope
                                 .color(AppTheme::TEXT)?
                         ),
                     button("Send")
-                        .on(event::click, move |_| {
+                        .on(events::click, move |_| {
                             send_message()?;
                             Ok(())
                         })
@@ -464,7 +465,7 @@ pub fn EventStreamDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
                     .color(AppTheme::TEXT)?
             ),
             button(rx!(ctx; if *$is_connected { "Stop Stream" } else { "Start Stream" })?)
-                .on(event::click, move |_| {
+                .on(events::click, move |_| {
                     stream.toggle().map_err(|error| {
                         SilexError::recoverable(SilexErrorKind::Framework(error.to_string()))
                     })?;
@@ -478,7 +479,7 @@ pub fn EventStreamDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
                         .cursor("pointer")?
                 ),
             button("Clear Log")
-                .on(event::click, move |_| {
+                .on(events::click, move |_| {
                     stream.clear_messages()?;
                     Ok(())
                 })
@@ -540,13 +541,13 @@ pub fn NetDemoPage<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
         // Navigation Tabs
         div![
             button("HTTP Client")
-                .on(event::click, active_tab.setter("http"))
+                .on(events::click, active_tab.setter("http"))
                 .classes(rx!(ctx; if *$active_tab == "http" { "active" } else { "" })?),
             button("WebSocket")
-                .on(event::click, active_tab.setter("ws"))
+                .on(events::click, active_tab.setter("ws"))
                 .classes(rx!(ctx; if *$active_tab == "ws" { "active" } else { "" })?),
             button("EventStream")
-                .on(event::click, active_tab.setter("sse"))
+                .on(events::click, active_tab.setter("sse"))
                 .classes(rx!(ctx; if *$active_tab == "sse" { "active" } else { "" })?),
         ].class("tab-nav"),
 

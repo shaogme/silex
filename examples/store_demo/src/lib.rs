@@ -2,6 +2,7 @@ use silex::bootstrap::{BrowserBootstrap, JsAppHost};
 use silex::dom::lifecycle::CleanupSink;
 use silex::prelude::*;
 use silex::reexports::*;
+use silex::view::events;
 
 #[derive(Clone, Debug)]
 #[store]
@@ -64,7 +65,7 @@ fn UserEditor<'scope, Ctx>(#[ctx] ctx: Ctx, user: UserStore<'scope>) -> impl Vie
             input()
                 .type_("text")
                 .value(user.name)
-                .on(event::input, move |event: DomEvent| {
+                .on(events::input, move |event: DomEvent| {
                     user.name.set(event.input_value().unwrap_or_default())?;
                     Ok(())
                 }),
@@ -83,7 +84,7 @@ fn UserEditor<'scope, Ctx>(#[ctx] ctx: Ctx, user: UserStore<'scope>) -> impl Vie
             input()
                 .type_("email")
                 .value(user.email)
-                .on(event::input, move |event: DomEvent| {
+                .on(events::input, move |event: DomEvent| {
                     user.email.set(event.input_value().unwrap_or_default())?;
                     Ok(())
                 }),

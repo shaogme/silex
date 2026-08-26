@@ -5,8 +5,8 @@ extern crate silex_macros_test as silex;
 use silex::core::{ErrorReporter, OwnerAccess, Runtime, Rx, Signal, SilexContext, SilexResult};
 use silex::css::types::Hex;
 use silex::macros::{css, global, styled, tw, tw_variants};
-use silex_view::AnyView;
-use silex_view::attribute::{AttrOp, AttributeGroup, ReactiveBindingTarget};
+use silex_view::attributes::{AttrOp, AttributeGroup, ReactiveBindingTarget};
+use silex_view::elements::AnyView;
 
 tw_variants! {
     pub struct NumericVariants {
@@ -150,9 +150,9 @@ fn classes_converts_signal_to_a_scoped_attribute_group() {
         .with_transient(|owner| {
             let condition = owner.signal(true).unwrap();
             let group = conditional_classes(condition);
-            assert_eq!(group.0.len(), 1);
+            assert_eq!(group.as_ops().len(), 1);
             assert!(matches!(
-                &group.0[0],
+                &group.as_ops()[0],
                 AttrOp::Reactive(plan)
                     if matches!(&plan.target, ReactiveBindingTarget::ClassToggle(_))
             ));

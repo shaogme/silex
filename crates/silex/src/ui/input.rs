@@ -1,7 +1,7 @@
 use silex_core::prelude::*;
 use silex_html::input;
 use silex_macros::{component, tw};
-use silex_view::prelude::*;
+use silex_view::{events, prelude::*};
 
 #[component]
 pub fn Input<'scope, Ctx>(
@@ -47,7 +47,7 @@ pub fn Input<'scope, Ctx>(
         .attr("placeholder", rx!(ctx; $placeholder.clone())?)
         .prop("value", rx!(ctx; $value.clone())?)
         .class(input_cls)
-        .on(event::input, move |e: DomEvent| -> SilexResult<()> {
+        .on(events::input, move |e: DomEvent| -> SilexResult<()> {
             if let Some(value) = e.input_value() {
                 on_input.invoke(value)?;
             }

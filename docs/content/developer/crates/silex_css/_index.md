@@ -72,7 +72,7 @@ Runtime
 - `sty(ctx)` 需要 `SilexContextProvider<'scope>`。动态 CSS 不会隐式创建
   `Runtime`，`Rx`、`ReadSignal`、`Computed` 等 source 必须属于当前 owner
   和兼容的 runtime。
-- `Style` 实现 `silex_view::attribute::ApplyToDom`。应用到元素时，调用方
+- `Style` 实现 `silex_view::attributes::ApplyToDom`。应用到元素时，调用方
   传入的 `MountContext` 提供 owner、事务和错误处理；owner 关闭会移除该
   样式产生的 class 以及它拥有的 inline 自定义属性。
 - 局部动态声明优先写入 `var(--sb-...)` 引用，再由 effect 更新元素的
@@ -151,7 +151,7 @@ CSSOM 的行为。
 ## 已知限制与维护注意
 
 - `Style::render` 是 crate 内部测试入口，不是应用层 CSS 导出 API。应用应
-  通过 `silex_view::attribute::ApplyToDom`、`Element::style(...)` 或宏生成的
+  通过 `silex_view::attributes::ApplyToDom`、`Element::style(...)` 或宏生成的
   view 应用样式，避免绕过 owner cleanup。
 - `sty().nest(":hover", ...)` 表示后代选择器 `.class :hover`；需要元素
   自身伪类时使用 `pseudo(":hover", ...)` 或 `on_hover(...)`。

@@ -3,10 +3,11 @@ use silex_core::SilexResult;
 use silex_core::traits::RxGet;
 use silex_html::a;
 use silex_macros::component;
-use silex_view::attribute::{GlobalAttributes, GlobalEventAttributes};
 use silex_view::{
-    AnyView, AttributeBuilder, AttributeGroup, DomEvent, MountContext, MountInstance,
-    MouseEventData, View,
+    attributes::{AttributeBuilder, AttributeGroup, GlobalAttributes, GlobalEventAttributes},
+    elements::AnyView,
+    events::{DomEvent, MouseEventData},
+    mount::{MountContext, MountInstance, View},
 };
 
 pub(crate) fn is_active_path(current_path: &str, href: &str) -> bool {

@@ -1,5 +1,5 @@
 use silex_html::{A, Br, SvgA, a, br, svg_a};
-use silex_view::{Tag, TagNamespace, TypedElement};
+use silex_view::elements::{Tag, TagNamespace, TypedElement};
 
 fn main() {
     assert_eq!(A::METADATA.name, "a");

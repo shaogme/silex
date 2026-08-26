@@ -29,9 +29,11 @@ use silex_core::{
 };
 use silex_macros::component;
 use silex_view::{
-    AnyView, BranchEvaluation, BranchRenderContext, MountContext, MountInstance, StableBranch, View,
+    elements::AnyView,
+    events::{Event, EventKind, bind_window_event},
+    flow::{BranchEvaluation, BranchRenderContext, StableBranch},
+    mount::{MountContext, MountInstance, View},
 };
-use silex_view::{Event, EventKind, bind_window_event};
 use std::rc::Rc;
 
 /// 能够转换为本地路由路径的值。

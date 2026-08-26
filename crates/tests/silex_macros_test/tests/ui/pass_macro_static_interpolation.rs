@@ -32,7 +32,7 @@ global! {
 styled! {
     pub StaticStyled<'owner><div>(
         #[ctx] ctx: silex_core::SilexContext<'owner>,
-        children: silex_view::AnyView<'owner>,
+        children: silex_view::elements::AnyView<'owner>,
     ) {
         color: $(static StaticTheme::PRIMARY);
     }
@@ -41,7 +41,7 @@ styled! {
 styled! {
     pub MixedStyled<'owner><div>(
         #[ctx] ctx: silex_core::SilexContext<'owner>,
-        children: silex_view::AnyView<'owner>,
+        children: silex_view::elements::AnyView<'owner>,
         color: silex_core::reactivity::Rx<'owner, Hex>,
     ) {
         color: $(static StaticTheme::PRIMARY);

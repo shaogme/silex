@@ -11,7 +11,9 @@ use silex_core::{
 use silex_macros::component;
 use silex_view::prelude::*;
 use silex_view::{
-    BranchEvaluation, BranchRenderContext, MountContext, MountState, SharedCell, StableBranch,
+    flow::{BranchEvaluation, BranchRenderContext, StableBranch},
+    lifecycle::{MountState, SharedCell},
+    mount::MountContext,
 };
 
 struct ParentHandler<'scope> {

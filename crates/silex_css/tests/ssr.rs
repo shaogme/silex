@@ -7,8 +7,9 @@ use silex_dom::{
     adapters::ssr::{SerializeOptions, SsrDom},
     lifecycle::CleanupSink,
 };
-use silex_view::attribute::{AttributeBuilder, GlobalAttributes};
-use silex_view::{Element, MountedApp};
+use silex_view::app::MountedApp;
+use silex_view::attributes::{AttributeBuilder, GlobalAttributes};
+use silex_view::elements::Element;
 
 #[derive(Clone)]
 struct Theme {

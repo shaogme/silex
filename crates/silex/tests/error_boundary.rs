@@ -8,7 +8,8 @@ use silex_core::{
     Runtime, RxGet, SilexContext, SilexError, SilexErrorKind, SilexResult,
 };
 use silex_dom::adapters::browser::BrowserDom;
-use silex_view::{MountContext, MountInstance, MountOwnerToken, View};
+use silex_view::lifecycle::MountOwnerToken;
+use silex_view::mount::{MountContext, MountInstance, View};
 use wasm_bindgen_test::*;
 
 #[path = "error_boundary/support.rs"]

@@ -4,7 +4,7 @@ mod tags {
 }
 
 pub use silex_view::chain;
-pub use silex_view::{ViewCons, ViewNil};
+pub use silex_view::mount::{ViewCons, ViewNil};
 
 pub mod attributes;
 pub use attributes::*;

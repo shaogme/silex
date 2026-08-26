@@ -10,7 +10,9 @@ use silex_router::{
     Link, Navigator, RouteEntry, RoutePath, RouteTable, Router, RouterContext, RouterContextProps,
     RouterView,
 };
-use silex_view::{AnyView, MountContext, MountInstance, MountOwnerToken, View};
+use silex_view::elements::AnyView;
+use silex_view::lifecycle::MountOwnerToken;
+use silex_view::mount::{MountContext, MountInstance, View};
 use std::{
     cell::{Cell, RefCell},
     collections::HashMap,

@@ -1,25 +1,27 @@
-error[E0599]: the method `href` exists for struct `silex_view::element::TypedElement<'_, Img>`, but its trait bounds were not satisfied
+error[E0599]: the method `href` exists for struct `silex_view::kernel::elements::typed::TypedElement<'_, Img>`, but its trait bounds were not satisfied
  --> tests/ui/fail_anchor_on_img.rs:4:19
   |
 4 |     let _ = img().href("/docs");
-  |                   ^^^^ method cannot be called on `silex_view::element::TypedElement<'_, Img>` due to unsatisfied trait bounds
+  |                   ^^^^ method cannot be called due to unsatisfied trait bounds
   |
- ::: $WORKSPACE/crates/silex_view/src/element.rs
+ ::: $WORKSPACE/crates/silex_view/src/kernel/elements/typed.rs
   |
-  |         pub struct $struct_name;
-  |         ------------------------ doesn't satisfy `Img: silex_view::element::AnchorTag`
-...
   | pub struct TypedElement<'scope, T: Tag> {
   | --------------------------------------- doesn't satisfy `_: AnchorAttributes<'_>`
   |
+ ::: $WORKSPACE/crates/silex_view/src/kernel/elements/tag.rs
+  |
+  |         pub struct $struct_name;
+  |         ------------------------ doesn't satisfy `Img: silex_view::kernel::elements::tag::AnchorTag`
+  |
   = note: the following trait bounds were not satisfied:
-          `Img: silex_view::element::AnchorTag`
-          which is required by `silex_view::element::TypedElement<'_, Img>: AnchorAttributes<'_>`
-          `&silex_view::element::TypedElement<'_, Img>: silex_view::attribute::AttributeBuilder<'_>`
-          which is required by `&silex_view::element::TypedElement<'_, Img>: AnchorAttributes<'_>`
-          `&silex_view::element::TypedElement<'_, Img>: HtmlTagCarrier`
-          which is required by `&silex_view::element::TypedElement<'_, Img>: AnchorAttributes<'_>`
-          `&mut silex_view::element::TypedElement<'_, Img>: silex_view::attribute::AttributeBuilder<'_>`
-          which is required by `&mut silex_view::element::TypedElement<'_, Img>: AnchorAttributes<'_>`
-          `&mut silex_view::element::TypedElement<'_, Img>: HtmlTagCarrier`
-          which is required by `&mut silex_view::element::TypedElement<'_, Img>: AnchorAttributes<'_>`
+          `Img: silex_view::kernel::elements::tag::AnchorTag`
+          which is required by `silex_view::kernel::elements::typed::TypedElement<'_, Img>: AnchorAttributes<'_>`
+          `&silex_view::kernel::elements::typed::TypedElement<'_, Img>: silex_view::kernel::attributes::builder::AttributeBuilder<'_>`
+          which is required by `&silex_view::kernel::elements::typed::TypedElement<'_, Img>: AnchorAttributes<'_>`
+          `&silex_view::kernel::elements::typed::TypedElement<'_, Img>: HtmlTagCarrier`
+          which is required by `&silex_view::kernel::elements::typed::TypedElement<'_, Img>: AnchorAttributes<'_>`
+          `&mut silex_view::kernel::elements::typed::TypedElement<'_, Img>: silex_view::kernel::attributes::builder::AttributeBuilder<'_>`
+          which is required by `&mut silex_view::kernel::elements::typed::TypedElement<'_, Img>: AnchorAttributes<'_>`
+          `&mut silex_view::kernel::elements::typed::TypedElement<'_, Img>: HtmlTagCarrier`
+          which is required by `&mut silex_view::kernel::elements::typed::TypedElement<'_, Img>: AnchorAttributes<'_>`

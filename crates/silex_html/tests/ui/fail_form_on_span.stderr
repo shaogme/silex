@@ -1,25 +1,27 @@
-error[E0599]: the method `value` exists for struct `silex_view::element::TypedElement<'_, Span>`, but its trait bounds were not satisfied
+error[E0599]: the method `value` exists for struct `silex_view::kernel::elements::typed::TypedElement<'_, Span>`, but its trait bounds were not satisfied
  --> tests/ui/fail_form_on_span.rs:4:22
   |
 4 |     let _ = span(()).value("wrong");
   |                      ^^^^^
   |
- ::: $WORKSPACE/crates/silex_view/src/element.rs
+ ::: $WORKSPACE/crates/silex_view/src/kernel/elements/typed.rs
   |
-  |         pub struct $struct_name;
-  |         ------------------------ doesn't satisfy `Span: silex_view::element::FormTag`
-...
   | pub struct TypedElement<'scope, T: Tag> {
   | --------------------------------------- doesn't satisfy `_: FormAttributes<'_>`
   |
+ ::: $WORKSPACE/crates/silex_view/src/kernel/elements/tag.rs
+  |
+  |         pub struct $struct_name;
+  |         ------------------------ doesn't satisfy `Span: silex_view::kernel::elements::tag::FormTag`
+  |
   = note: the following trait bounds were not satisfied:
-          `Span: silex_view::element::FormTag`
-          which is required by `silex_view::element::TypedElement<'_, Span>: FormAttributes<'_>`
-          `&silex_view::element::TypedElement<'_, Span>: silex_view::attribute::AttributeBuilder<'_>`
-          which is required by `&silex_view::element::TypedElement<'_, Span>: FormAttributes<'_>`
-          `&silex_view::element::TypedElement<'_, Span>: HtmlTagCarrier`
-          which is required by `&silex_view::element::TypedElement<'_, Span>: FormAttributes<'_>`
-          `&mut silex_view::element::TypedElement<'_, Span>: silex_view::attribute::AttributeBuilder<'_>`
-          which is required by `&mut silex_view::element::TypedElement<'_, Span>: FormAttributes<'_>`
-          `&mut silex_view::element::TypedElement<'_, Span>: HtmlTagCarrier`
-          which is required by `&mut silex_view::element::TypedElement<'_, Span>: FormAttributes<'_>`
+          `Span: silex_view::kernel::elements::tag::FormTag`
+          which is required by `silex_view::kernel::elements::typed::TypedElement<'_, Span>: FormAttributes<'_>`
+          `&silex_view::kernel::elements::typed::TypedElement<'_, Span>: silex_view::kernel::attributes::builder::AttributeBuilder<'_>`
+          which is required by `&silex_view::kernel::elements::typed::TypedElement<'_, Span>: FormAttributes<'_>`
+          `&silex_view::kernel::elements::typed::TypedElement<'_, Span>: HtmlTagCarrier`
+          which is required by `&silex_view::kernel::elements::typed::TypedElement<'_, Span>: FormAttributes<'_>`
+          `&mut silex_view::kernel::elements::typed::TypedElement<'_, Span>: silex_view::kernel::attributes::builder::AttributeBuilder<'_>`
+          which is required by `&mut silex_view::kernel::elements::typed::TypedElement<'_, Span>: FormAttributes<'_>`
+          `&mut silex_view::kernel::elements::typed::TypedElement<'_, Span>: HtmlTagCarrier`
+          which is required by `&mut silex_view::kernel::elements::typed::TypedElement<'_, Span>: FormAttributes<'_>`

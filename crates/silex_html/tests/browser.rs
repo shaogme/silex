@@ -7,7 +7,8 @@ use silex_dom::{
     runtime::DomContext,
 };
 use silex_html::{a, svg_a};
-use silex_view::{MountContext, MountInstance, MountOwnerToken, View};
+use silex_view::lifecycle::MountOwnerToken;
+use silex_view::mount::{MountContext, MountInstance, View};
 use wasm_bindgen_test::*;
 use web_sys::Element;
 

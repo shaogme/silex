@@ -1,6 +1,6 @@
 use silex_bootstrap::AppHost;
 use silex_core::{OwnerAccess, Runtime, SilexResult};
-use silex_view::MountBuilderContext;
+use silex_view::app::MountBuilderContext;
 
 #[allow(dead_code)]
 fn call_mount(

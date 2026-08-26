@@ -5,8 +5,9 @@ use crate::{
 use silex_core::{EffectPhase, RxGet, SilexError, SilexErrorKind, SilexResult};
 use silex_dom::{model::DomElement, runtime::DomContext};
 use silex_view::{
-    MountContext, MountErrorHandler, MountOwner,
-    attribute::{ApplyTarget, ApplyToDom, AttrOp, IntoStorable},
+    attributes::{ApplyTarget, ApplyToDom, AttrOp, IntoStorable},
+    lifecycle::{MountErrorHandler, MountOwner},
+    mount::MountContext,
 };
 use std::{
     fmt::{Display, Write},

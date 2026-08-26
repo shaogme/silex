@@ -1,9 +1,9 @@
 use silex_router::macros::{component, router};
 use silex_router::RouterContext;
-use silex_view::{AnyView, View};
+use silex_view::{elements::AnyView, mount::View};
 
 #[component]
-fn Home<'scope>(#[ctx] _ctx: RouterContext<'scope>) -> impl silex_view::View<'scope> {
+fn Home<'scope>(#[ctx] _ctx: RouterContext<'scope>) -> impl silex_view::mount::View<'scope> {
     "home"
 }
 

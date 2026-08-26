@@ -2,6 +2,7 @@ use std::borrow::Cow;
 
 use crate::css::AppTheme;
 use silex::prelude::*;
+use silex::view::events;
 use silex::view::view_match;
 
 #[component]
@@ -38,7 +39,7 @@ pub fn ListDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
             .row_error_handler(list_error_handler)
             .build()),
         div![
-            button("Add Item").on(event::click, move |_| {
+            button("Add Item").on(events::click, move |_| {
                 error_msg.set(None)?;
                 list.update(|l| {
                     if let Ok(v) = l {
@@ -49,7 +50,7 @@ pub fn ListDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
                 })?;
                 Ok(())
             }),
-            button("Duplicate Key").on(event::click, move |_| {
+            button("Duplicate Key").on(events::click, move |_| {
                 error_msg.set(None)?;
                 list.update(|l| {
                     if let Ok(v) = l {
@@ -59,7 +60,7 @@ pub fn ListDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
                 })?;
                 Ok(())
             }),
-            button("Simulate Error").on(event::click, move |_| {
+            button("Simulate Error").on(events::click, move |_| {
                 list.set(Err(SilexError::fatal(SilexErrorKind::Javascript(
                     "模拟数据加载失败".to_string(),
                 ))))?;
@@ -77,7 +78,7 @@ pub fn ShowDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
     Ok(div![
         h3("Conditional Rendering with Show"),
         p("Demonstrates passing a Signal directly to Show as condition."),
-        button("Toggle Visibility").on(event::click, visible.updater(|v| *v = !*v)),
+        button("Toggle Visibility").on(events::click, visible.updater(|v| *v = !*v)),
         Show(ctx, visible)
             .children(
                 div("✅ Content is visible!").style(
@@ -107,9 +108,9 @@ pub fn DynamicDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
         h3("Dynamic Component Switching"),
         p("Demonstrates Dynamic component with closure accessor."),
         div![
-            button("Show A").on(event::click, mode.setter("A")),
-            button("Show B").on(event::click, mode.setter("B")),
-            button("Show C").on(event::click, mode.setter("C")),
+            button("Show A").on(events::click, mode.setter("A")),
+            button("Show B").on(events::click, mode.setter("B")),
+            button("Show C").on(events::click, mode.setter("C")),
         ]
         .style(
             sty(ctx)
@@ -171,9 +172,9 @@ pub fn SwitchDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
     Ok(div![
         h3("Switch (Match) Demo"),
         div![
-            button("Tab 1").on(event::click, tab.setter(0)),
-            button("Tab 2").on(event::click, tab.setter(1)),
-            button("Tab 3").on(event::click, tab.setter(2)),
+            button("Tab 1").on(events::click, tab.setter(0)),
+            button("Tab 2").on(events::click, tab.setter(1)),
+            button("Tab 3").on(events::click, tab.setter(2)),
         ]
         .style(
             sty(ctx)
@@ -196,7 +197,7 @@ pub fn IndexDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
             .children(|item, idx| div![strong(format!("{}: ", idx)), item])
             .build(),
         button("Append Item")
-            .on(event::click, move |_| {
+            .on(events::click, move |_| {
                 items.update(|list| list.push("New Item"))?;
                 Ok(())
             })
@@ -210,14 +211,14 @@ pub fn PortalDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
 
     Ok(div![
         h3("Portal Demo"),
-        button("Toggle Modal").on(event::click, show_modal.updater(|v| *v = !*v)),
+        button("Toggle Modal").on(events::click, show_modal.updater(|v| *v = !*v)),
         Portal(ctx, show_modal)
             .children(
                 div![
                     div![
                         h4("I am a Modal!"),
                         p("I am rendered via Portal directly into the body, but I share ctx!"),
-                        button("Close").on(event::click, show_modal.setter(false))
+                        button("Close").on(events::click, show_modal.setter(false))
                     ]
                     .style(
                         sty(ctx)

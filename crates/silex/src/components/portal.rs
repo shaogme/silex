@@ -8,8 +8,11 @@ use silex_dom::{
 };
 use silex_macros::component;
 use silex_view::{
-    AnyView, ApplyTarget, AttrOp, IntoStorable, MountContext, MountInstance, MountOwner,
-    MountOwnerToken, MountTarget, MountTransaction, View, ViewError,
+    attributes::{ApplyTarget, AttrOp, IntoStorable},
+    elements::AnyView,
+    errors::ViewError,
+    lifecycle::{MountOwner, MountOwnerToken},
+    mount::{MountContext, MountInstance, MountTarget, MountTransaction, View},
 };
 use std::{
     borrow::Cow,

@@ -7,7 +7,7 @@ weight = 85
 # 挂载边界与清理
 
 本页是跨 crate 导航入口：`silex_dom` 本身没有 `mount` 或 `dispose` 函数。实际
-的应用挂载事务在 `silex_view::MountedApp`、`MountContext` 和 owner 中完成；
+的应用挂载事务在 `silex_view::app::MountedApp`、`MountContext` 和 owner 中完成；
 `silex_dom` 只提供 mount glue 使用的低层原语。
 
 ## `silex_dom` 提供什么

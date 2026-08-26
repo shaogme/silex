@@ -3,8 +3,8 @@ use silex_core::prelude::*;
 use silex_dom::{model::event::DomEvent, runtime::HostResource};
 use silex_html::div;
 use silex_macros::{component, tw};
-use silex_view::MountOwnerToken;
-use silex_view::prelude::*;
+use silex_view::lifecycle::MountOwnerToken;
+use silex_view::{events, prelude::*};
 fn get_event_anchor(event: &DomEvent) -> (f64, f64, f64, f64) {
     event
         .rect()
@@ -194,21 +194,21 @@ pub fn TooltipTrigger<'scope, Ctx>(
         .apply(owner_binding(context))
         .attr("data-slot", "tooltip-trigger")
         .class(trigger_cls)
-        .on(event::mouseenter, move |e: DomEvent| -> SilexResult<()> {
+        .on(events::mouseenter, move |e: DomEvent| -> SilexResult<()> {
             context.anchor.set(get_event_anchor(&e))?;
             context.on_pointer_enter()?;
             on_mouse_enter.invoke(e)
         })
-        .on(event::mouseleave, move |e: DomEvent| -> SilexResult<()> {
+        .on(events::mouseleave, move |e: DomEvent| -> SilexResult<()> {
             context.on_pointer_leave()?;
             on_mouse_leave.invoke(e)
         })
-        .on(event::focus, move |e: DomEvent| -> SilexResult<()> {
+        .on(events::focus, move |e: DomEvent| -> SilexResult<()> {
             context.anchor.set(get_event_anchor(&e))?;
             context.on_pointer_enter()?;
             on_focus.invoke(e)
         })
-        .on(event::blur, move |e: DomEvent| -> SilexResult<()> {
+        .on(events::blur, move |e: DomEvent| -> SilexResult<()> {
             context.on_pointer_leave()?;
             on_blur.invoke(e)
         }))
@@ -311,11 +311,11 @@ pub fn TooltipContent<'scope, Ctx>(
         .attr("role", "tooltip")
         .class(content_cls)
         .on(
-            event::mouseenter,
+            events::mouseenter,
             move |_event: DomEvent| -> SilexResult<()> { context.on_pointer_enter() },
         )
         .on(
-            event::mouseleave,
+            events::mouseleave,
             move |_event: DomEvent| -> SilexResult<()> { context.on_pointer_leave() },
         ))
     .attr("data-radix-popper-content-wrapper", "")

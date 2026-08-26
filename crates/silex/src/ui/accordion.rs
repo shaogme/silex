@@ -10,7 +10,7 @@ use silex_dom::{
 use silex_html::{button, div, path, svg};
 use silex_macros::{component, tw};
 use silex_view::prelude::*;
-use silex_view::{MountAncestry, StableBranch};
+use silex_view::{flow::StableBranch, mount::MountAncestry};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 static NEXT_ACCORDION_ITEM_ID: AtomicU64 = AtomicU64::new(0);

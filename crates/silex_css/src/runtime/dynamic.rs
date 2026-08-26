@@ -21,12 +21,16 @@ use silex_dom::{
     runtime::DomContext,
 };
 use silex_view::{
-    AttrOp as ViewAttrOp, MountContext as ViewMountContext,
-    MountErrorHandler as ViewMountErrorHandler, MountInstance as ViewMountInstance,
-    MountOwnerToken as ViewMountOwnerToken, MountState as ViewMountState, View as ViewTrait,
-    attribute::{
-        ApplyTarget as ViewApplyTarget, ApplyToDom as ViewApplyToDom,
+    attributes::{
+        ApplyTarget as ViewApplyTarget, ApplyToDom as ViewApplyToDom, AttrOp as ViewAttrOp,
         IntoStorable as ViewIntoStorable, update_class_tokens,
+    },
+    lifecycle::{
+        MountErrorHandler as ViewMountErrorHandler, MountOwnerToken as ViewMountOwnerToken,
+        MountState as ViewMountState,
+    },
+    mount::{
+        MountContext as ViewMountContext, MountInstance as ViewMountInstance, View as ViewTrait,
     },
 };
 use std::{

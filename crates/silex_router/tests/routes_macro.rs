@@ -1,5 +1,5 @@
 use silex_router::{PathTail, RouteMatcher, macros::router};
-use silex_view::AnyView;
+use silex_view::elements::AnyView;
 
 router! {
     pub enum CssRoute {

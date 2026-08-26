@@ -13,8 +13,8 @@ use silex_core::{
     reactivity::{PromotionPlan, ReactiveSource, ReadSignal, Signal, StoredValue},
     traits::{RxBase, RxData, RxRead, RxReadRef, RxReadRefSource, RxValue, RxWrite},
 };
-use silex_view::attribute::{IntoStorable, ReactiveBinding};
-use silex_view::{MountContext, MountInstance, View};
+use silex_view::attributes::{IntoStorable, ReactiveBinding};
+use silex_view::mount::{MountContext, MountInstance, View};
 use std::rc::Rc;
 
 pub type PersistenceGetFn<'scope> =

@@ -301,7 +301,7 @@ fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
             let __slx_conditions: ::std::vec::Vec<#__silex::core::Rx<'_, bool>> =
                 ::std::vec![ #(#condition_sources),* ];
 
-            #__view::attribute::AttrOp::on_commit(
+            #__view::attributes::AttrOp::on_commit(
                 move |element, context| {
                     let owner = context.owner();
                     let error_handler = context.error_handler();
@@ -347,7 +347,7 @@ fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
                                             .any(|__slx_next| __slx_next == *__slx_token)
                                     })
                                     .map(::std::string::ToString::to_string);
-                                #__view::attribute::update_class_tokens(
+                                #__view::attributes::update_class_tokens(
                                     &__slx_dom,
                                     &__slx_element,
                                     __slx_add,
@@ -378,7 +378,7 @@ fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
                                 let __slx_remove = __slx_class
                                     .split_whitespace()
                                     .map(::std::string::ToString::to_string);
-                                #__view::attribute::update_class_tokens(
+                                #__view::attributes::update_class_tokens(
                                     &__slx_dom_for_cleanup,
                                     &__slx_element_for_cleanup,
                                     ::std::iter::empty(),

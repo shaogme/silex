@@ -1,5 +1,6 @@
 use crate::css::AppTheme;
 use silex::prelude::*;
+use silex::view::events;
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 struct Settings {
@@ -184,19 +185,19 @@ fn ManualFlushDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
                 .style(sty(ctx).width(pct(100))?.height(px(120))?.padding(px(12))?.border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?.border_radius(px(8))?.background(AppTheme::SURFACE_ALT)?.color(AppTheme::TEXT)?.resize(ResizeKeyword::Vertical)?),
             div![
                 button("💾 Save to Storage")
-                    .on(event::click, move |_| {
+                    .on(events::click, move |_| {
                         draft.flush()?;
                         Ok(())
                     })
                     .style(sty(ctx).background(AppTheme::PRIMARY)?.color(ColorName::White)?.border(NONE)?.padding(padding::block_inline(px(8), px(16)))?.border_radius(px(6))?.cursor(CursorKeyword::Pointer)?.transition("opacity 0.2s")?),
                 button("🔄 Reload from Storage")
-                    .on(event::click, move |_| {
+                    .on(events::click, move |_| {
                         draft.reload()?;
                         Ok(())
                     })
                     .style(sty(ctx).background(AppTheme::SURFACE)?.color(AppTheme::TEXT)?.border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?.padding(padding::block_inline(px(8), px(16)))?.border_radius(px(6))?.cursor(CursorKeyword::Pointer)?),
                 button("🗑️ Forget")
-                    .on(event::click, move |_| {
+                    .on(events::click, move |_| {
                         draft.remove()?;
                         Ok(())
                     })
@@ -286,7 +287,7 @@ fn ErrorHandlingDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
                             "value",
                             settings.map(owner, |s| s.username.clone(), error_handler)?
                         )
-                        .on(event::input, move |e: DomEvent| {
+                        .on(events::input, move |e: DomEvent| {
                             settings
                                 .update(|s| s.username = e.input_value().unwrap_or_default())?;
                             Ok(())
@@ -313,7 +314,7 @@ fn ErrorHandlingDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
                         .attr("min", "0")
                         .attr("max", "100")
                         .prop("value", settings.map(owner, |s| s.volume, error_handler)?)
-                        .on(event::input, move |e: DomEvent| {
+                        .on(events::input, move |e: DomEvent| {
                             if let Ok(v) = e.input_value().unwrap_or_default().parse::<u32>() {
                                 settings.update(|s| s.volume = v)?;
                             }
@@ -351,7 +352,7 @@ fn ErrorHandlingDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
                     })
                 },
                 button("Reset to Factory Defaults")
-                    .on(event::click, move |_| {
+                    .on(events::click, move |_| {
                         settings.reset()?;
                         Ok(())
                     })

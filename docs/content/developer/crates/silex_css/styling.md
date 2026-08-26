@@ -6,7 +6,7 @@ weight = 10
 
 # 类型安全样式与 `Style`
 
-`Style<'scope>` 把一组 CSS 声明表示为可应用到 `silex_view::Element` 的
+`Style<'scope>` 把一组 CSS 声明表示为可应用到 `silex_view::elements::Element` 的
 attribute operation。它用 `ValidFor<Property>` 在 Rust 编译期限制值类型，用
 `CssSource<'scope, T>` 把静态值和 owner 绑定的响应式值统一到 builder 中。
 最终结果不是直接写入 `style="..."` 的整段字符串，而是一个稳定 class、
@@ -26,7 +26,7 @@ let style = sty(ctx)
     .on_hover(|style| style.color(rgb(30, 64, 175)))?;
 ```
 
-`Style` 实现 `silex_view::attribute::ApplyToDom`，所以可以作为 View 元素的
+`Style` 实现 `silex_view::attributes::ApplyToDom`，所以可以作为 View 元素的
 `.style(...)` 或 `.apply(...)` 属性操作：
 
 ```rust

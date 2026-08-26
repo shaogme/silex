@@ -2,6 +2,7 @@ use silex::bootstrap::{BrowserBootstrap, JsAppHost};
 use silex::dom::lifecycle::CleanupSink;
 use silex::prelude::*;
 use silex::reexports::*;
+use silex::view::events;
 
 router! {
     pub enum AppRoute {
@@ -226,7 +227,7 @@ fn HomeView<'scope>(#[ctx] ctx: RouterContext<'scope>) -> impl View<'scope> {
                             .width(pct(100))?
                     )
                     .value(name)
-                    .on(event::input, move |event: DomEvent| {
+                    .on(events::input, move |event: DomEvent| {
                         name.set(event.input_value().unwrap_or_default())?;
                         Ok(())
                     })

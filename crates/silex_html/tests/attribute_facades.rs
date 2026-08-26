@@ -6,7 +6,7 @@ use silex_html::{
     OpenAttributes, TableCellAttributes, TableHeaderAttributes, a, dialog, div, img, input, label,
     td, th,
 };
-use silex_view::attribute::AttributeBuilder;
+use silex_view::attributes::AttributeBuilder;
 
 #[test]
 fn supported_tags_keep_their_typed_facades() {

@@ -4,7 +4,7 @@ error[E0599]: the method `value` exists for enum `AnyView<'_>`, but its trait bo
 5 |     let _ = AnyView::new(input()).value("wrong");
   |                                   ^^^^^ method cannot be called on `AnyView<'_>` due to unsatisfied trait bounds
   |
- ::: $WORKSPACE/crates/silex_view/src/any.rs
+ ::: $WORKSPACE/crates/silex_view/src/kernel/elements/erased.rs
   |
   | pub enum AnyView<'scope> {
   | ------------------------ doesn't satisfy `AnyView<'_>: AttributeBuilder<'_>`, `AnyView<'_>: FormAttributes<'_>` or `AnyView<'_>: HtmlTagCarrier`

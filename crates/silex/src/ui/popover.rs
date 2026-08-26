@@ -2,7 +2,7 @@ use crate::components::{Portal, PortalHostAttrs};
 use silex_core::prelude::*;
 use silex_html::{div, p};
 use silex_macros::{component, tw};
-use silex_view::prelude::*;
+use silex_view::{events, prelude::*};
 
 /// Explicit Popover Context holding reactive state for visibility and anchor bounds.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -138,7 +138,7 @@ pub fn PopoverAnchor<'scope, Ctx>(
     Ok(div(children)
         .attr("data-slot", "popover-anchor")
         .class(anchor_cls)
-        .on(event::click, move |e: DomEvent| -> SilexResult<()> {
+        .on(events::click, move |e: DomEvent| -> SilexResult<()> {
             if let Some(rect) = e.rect() {
                 context.update_anchor_from_rect(rect)?;
             }
@@ -171,7 +171,7 @@ pub fn PopoverClose<'scope, Ctx>(
     Ok(div(children)
         .attr("data-slot", "popover-close")
         .class(close_cls)
-        .on(event::click, move |_| -> SilexResult<()> {
+        .on(events::click, move |_| -> SilexResult<()> {
             context.close()?;
             on_click.invoke(())
         }))
@@ -345,7 +345,7 @@ pub fn PopoverContent<'scope, Ctx>(
         div(())
             .attr("data-slot", "popover-overlay")
             .class(tw!("fixed inset-0 z-50 bg-transparent"))
-            .on(event::click, move |_| -> SilexResult<()> {
+            .on(events::click, move |_| -> SilexResult<()> {
                 context.close()?;
                 on_close.invoke(())
             }),
@@ -383,7 +383,7 @@ pub fn PopoverTrigger<'scope, Ctx>(
     Ok(div(children)
         .attr("data-slot", "popover-trigger")
         .class(trigger_cls)
-        .on(event::click, move |e: DomEvent| -> SilexResult<()> {
+        .on(events::click, move |e: DomEvent| -> SilexResult<()> {
             if let Some(rect) = e.rect() {
                 context.update_anchor_from_rect(rect)?;
             }

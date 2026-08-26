@@ -16,7 +16,7 @@ weight = 20
 生成器把标签分为 `non_void` 和 `void`：
 
 ```rust
-use silex_view::attribute::AttributeBuilder;
+use silex_view::attributes::AttributeBuilder;
 use silex_html::{button, div, input, path, svg};
 
 let html = div!(button!("Save"), input());
@@ -61,7 +61,7 @@ SVG 的函数名遵循生成器的 Rust snake case 转换，例如 `linearGradie
 ## marker 与 DOM 类型
 
 每个生成标签都有一个公开 marker，例如 `Div`、`Input`、`Svg`。marker
-实现 `silex_view::element::Tag`，其 `DomElement` 由注入的 backend 创建：
+实现 `silex_view::elements::Tag`，其 `DomElement` 由注入的 backend 创建：
 
 | 标签类别 | 当前 `DomElement` |
 | --- | --- |
@@ -118,7 +118,7 @@ let view = icon("content");
 
 ## 运行时边界
 
-构造标签不会创建节点，`TypedElement` 实现的是 `silex_view::View`。真正
+构造标签不会创建节点，`TypedElement` 实现的是 `silex_view::mount::View`。真正
 mount 时，标签的 child、属性和事件在一个新的 provisional owner 下创建；
 失败会由 `silex_dom` 回滚，owner 关闭时移除节点和关联资源。因此不要把
 标签函数的返回值误当成已经存在的 `web_sys::Element`，也不要从它推导出

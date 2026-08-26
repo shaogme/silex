@@ -1,10 +1,9 @@
 //! View 与 core reactive source 的桥接。
 
-use crate::any::AnyView;
-use crate::context::MountContext;
-use crate::contract::{MountInstance, View, ViewCons};
-use crate::dynamic::DynamicRenderer;
-use crate::element::{Element, Tag, TypedElement};
+use crate::flow::dynamic::DynamicRenderer;
+use crate::kernel::elements::AnyView;
+use crate::kernel::elements::{Element, Tag, TypedElement};
+use crate::kernel::{MountContext, MountInstance, View, ViewCons};
 use silex_core::reactivity::{Computed, ReadSignal, Signal, StoredValue};
 use silex_core::{EffectPhase, Rx, RxReadRef, SilexError, SilexErrorKind, SilexResult};
 use std::{borrow::Cow, fmt::Display};

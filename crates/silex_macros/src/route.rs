@@ -808,7 +808,7 @@ fn generate_table_impl(silex: &TokenStream, view: &TokenStream, tree: &RouteTree
             ) -> ::std::result::Result<#silex::router::RouteTable<'scope>, #silex::router::RoutePatternError>
             where
                 F: Fn(Self, #silex::router::RouterContext<'scope>)
-                    -> #view::AnyView<'scope>
+                    -> #view::elements::AnyView<'scope>
                     + 'scope,
             {
                 let __silex_render = ::std::rc::Rc::new(render);
@@ -855,7 +855,7 @@ fn generate_table_expression(
                 #prefix,
                 #child,
                 move |__silex_ctx, __silex_outlet| {
-                    #view::View::into_any(
+                    #view::mount::View::into_any(
                         (#layout)(__silex_ctx, __silex_outlet)
                     )
                 },

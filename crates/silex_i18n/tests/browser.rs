@@ -8,7 +8,8 @@ use silex_i18n::{Catalog, I18nBuilder, Locale, detect_browser_locale, t};
 use silex_i18n::{DateTimeFormat, format_number};
 #[cfg(feature = "persist")]
 use silex_router::{RouterContext, RouterContextProps};
-use silex_view::{MountContext, MountOwnerToken};
+use silex_view::lifecycle::MountOwnerToken;
+use silex_view::mount::MountContext;
 use wasm_bindgen_test::*;
 #[cfg(feature = "persist")]
 use web_sys::StorageEvent;

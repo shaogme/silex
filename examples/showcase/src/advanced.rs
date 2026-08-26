@@ -3,6 +3,7 @@ use std::borrow::Cow;
 use crate::css::AppTheme;
 use silex::dom::diagnostics::logging::console_log;
 use silex::prelude::*;
+use silex::view::events;
 
 // --- Store Definition ---
 #[derive(Clone, Default, serde::Serialize, serde::Deserialize)]
@@ -42,7 +43,7 @@ pub fn StoreDemo<'scope, Ctx>(
         h4("Update Settings"),
         div![
             button("Toggle Theme").on(
-                event::click,
+                events::click,
                 settings.theme.updater(|t| {
                     *t = if t == "Light" {
                         "Dark".to_string()
@@ -52,7 +53,7 @@ pub fn StoreDemo<'scope, Ctx>(
                 })
             ),
             button("Toggle Notifications")
-                .on(event::click, settings.notifications.updater(|n| *n = !*n)),
+                .on(events::click, settings.notifications.updater(|n| *n = !*n)),
             input()
                 .bind_value(settings.username)
                 .placeholder("Change username..."),
@@ -108,10 +109,10 @@ pub fn JsonStorageDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
                 .margin_bottom(px(10))?
         ),
         div![
-            button("Level Up").on(event::click, move |_| {
+            button("Level Up").on(events::click, move |_| {
                 state.update(|s| s.level += 1).map_err(Into::into)
             }),
-            button("Add Shield").on(event::click, move |_| {
+            button("Add Shield").on(events::click, move |_| {
                 state
                     .update(|s| {
                         if !s.inventory.contains(&"Shield".to_string()) {
@@ -120,7 +121,7 @@ pub fn JsonStorageDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
                     })
                     .map_err(Into::into)
             }),
-            button("Reset").on(event::click, move |_| {
+            button("Reset").on(events::click, move |_| {
                 state.set(ComplexState::default()).map_err(Into::into)
             }),
         ]
@@ -144,9 +145,9 @@ pub fn StorageDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
         div![
             h4("Basic Type Persistence (No Serde needed)"),
             div![
-                button("-1").on(event::click, count.updater(|c| *c -= 1)),
+                button("-1").on(events::click, count.updater(|c| *c -= 1)),
                 span(count).style(sty(ctx).font_size(em_unit(1.5))?.font_weight(FontWeightKeyword::Bold)?.min_width(px(50))?.text_align(TextAlignKeyword::Center)?),
-                button("+1").on(event::click, count.updater(|c| *c += 1)),
+                button("+1").on(events::click, count.updater(|c| *c += 1)),
             ]
             .style(sty(ctx).display("flex")?.gap(px(20))?.align_items("center")?.margin("15px 0")?),
         ].style(sty(ctx).padding(px(15))?.border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?.border_radius(px(4))?.margin_bottom(px(20))?),
@@ -193,7 +194,7 @@ pub fn QueryDemo<'scope>(
                         .color(AppTheme::TEXT)?
                 ),
             button("Reset")
-                .on(event::click, val.setter("".into()))
+                .on(events::click, val.setter("".into()))
                 .style(sty(ctx).padding("8px 16px")?.cursor("pointer")?)
         ]
         .style(
@@ -277,10 +278,10 @@ pub fn ResourceDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
         p("Fetches user data with a 1s delay. You can optimistically update the name before the server responds."),
 
         div![
-            button("User 1").on(event::click, user_id.setter(1)),
-            button("User 2").on(event::click, user_id.setter(2)),
-            button("Invalid User").on(event::click, user_id.setter(-1)),
-            button("Refetch").on(event::click, move |_| {
+            button("User 1").on(events::click, user_id.setter(1)),
+            button("User 2").on(events::click, user_id.setter(2)),
+            button("Invalid User").on(events::click, user_id.setter(-1)),
+            button("Refetch").on(events::click, move |_| {
                 user_resource.refetch()?;
                 Ok(())
             }),
@@ -312,7 +313,7 @@ pub fn ResourceDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
                     div![
                         h4("Optimistic Updates (Local Cache)"),
                         button("Rename to 'Modified'")
-                            .on(event::click, move |_| {
+                            .on(events::click, move |_| {
                                 // Manually update the local resource data
                                 user_resource.update(|u| {
                                     u.name = "Modified Name".to_string();
@@ -385,7 +386,7 @@ pub fn MutationDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
                 .style(sty(ctx).margin_right(px(10))?.padding("5px")?),
             button("Login")
                 .attr("type", "button") // Prevent accidental form submission
-                .on(event::click, move |e: DomEvent| {
+                .on(events::click, move |e: DomEvent| {
                     e.prevent_default();
 
                     // Note: "login_mutation.mutate((username.get(), password.get()));" is the same as "login_mutation.mutate_with((username, password));"
@@ -462,7 +463,7 @@ pub fn SuspenseDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
                     .attr("type", "radio")
                     .attr("name", "suspense_mode")
                     .attr("checked", rx!(ctx; *$mode == SuspenseMode::KeepAlive)?)
-                    .on(event::change, mode.setter(SuspenseMode::KeepAlive)),
+                    .on(events::change, mode.setter(SuspenseMode::KeepAlive)),
                 " KeepAlive (CSS Hide)"
             ]
             .style(sty(ctx).margin_right(px(15))?),
@@ -471,7 +472,7 @@ pub fn SuspenseDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
                     .attr("type", "radio")
                     .attr("name", "suspense_mode")
                     .attr("checked", rx!(ctx; *$mode == SuspenseMode::Unmount)?)
-                    .on(event::change, mode.setter(SuspenseMode::Unmount)),
+                    .on(events::change, mode.setter(SuspenseMode::Unmount)),
                 " Unmount (DOM Remove)"
             ]
         ]
@@ -482,9 +483,9 @@ pub fn SuspenseDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
             } else {
                 "Create Component"
             }, error_handler)?)
-            .on(event::click, show_content.updater(|s| *s = !*s))
+            .on(events::click, show_content.updater(|s| *s = !*s))
             .style(sty(ctx).margin_right(px(10))?),
-            button("Reload Resource").on(event::click, trigger.updater(|n| *n += 1))
+            button("Reload Resource").on(events::click, trigger.updater(|n| *n += 1))
         ]
         .style(sty(ctx).margin_bottom(px(15))?),
         div![rx!(ctx;
@@ -662,7 +663,7 @@ pub fn AdaptiveReadDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
                         .attr("max", "1")
                         .attr("step", "0.01")
                         .prop("value", stability)
-                        .on(event::input, move |e: DomEvent| {
+                        .on(events::input, move |e: DomEvent| {
                             if let Ok(val) = e.input_value().unwrap_or_default().parse::<f64>() {
                                 stability
                                     .set(val)?;

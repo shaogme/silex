@@ -1,8 +1,10 @@
-use crate::context::MountContext;
-use crate::contract::{MountInstance, View, ViewCons, ViewNil};
-use crate::element::Element;
+use super::untyped::Element;
+use crate::kernel::{MountContext, MountInstance, View, ViewCons, ViewNil};
 use silex_core::SilexResult;
-use std::rc::Rc;
+use std::{
+    fmt::{Debug, Formatter, Result},
+    rc::Rc,
+};
 
 /// owner-bound type-erased View。
 #[derive(Default)]
@@ -77,8 +79,8 @@ impl PartialEq for AnyView<'_> {
     }
 }
 
-impl std::fmt::Debug for AnyView<'_> {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl Debug for AnyView<'_> {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> Result {
         match self {
             Self::Empty => formatter.write_str("AnyView(Empty)"),
             Self::Text(text) => formatter.debug_tuple("AnyView(Text)").field(text).finish(),

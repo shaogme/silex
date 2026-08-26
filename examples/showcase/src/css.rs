@@ -1,4 +1,5 @@
 use silex::prelude::*;
+use silex::view::events;
 
 use crate::advanced::UserSettingsStore;
 
@@ -355,7 +356,7 @@ pub fn StylingBasics<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
                 .pseudo_state(pseudo_state)?
                 .border_style(border_state)?
                 .padding_val(padding_state)?
-                .on(event::click, move |_| {
+                .on(events::click, move |_| {
                     color.update(|c| {
                         // Toggle between theme text color and warning yellow
                         *c = if *c == AppTheme::TEXT { hex("#fbbf24").into() } else { AppTheme::TEXT };
@@ -442,17 +443,17 @@ pub fn StylingBasics<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
 
                 Stack(ctx, chain!(
                     div![
-                        button("Grow").on(event::click, move |_| {
+                        button("Grow").on(events::click, move |_| {
                             count.update(|n| *n += 1)?;
                             Ok(())
                         })
                             .style(sty(ctx).padding("8px 16px")?.border_radius(px(6))?.border("1px solid #374151")?.background("#111827")?.color(ColorName::White)?.cursor("pointer")?.margin_right(px(8))?),
-                        button("Toggle Box Shadow").on(event::click, move |_| {
+                        button("Toggle Box Shadow").on(events::click, move |_| {
                             show_shadow.update(|s| *s = !*s)?;
                             Ok(())
                         })
                             .style(sty(ctx).padding("8px 16px")?.border_radius(px(6))?.border("1px solid #374151")?.background("#111827")?.color(ColorName::White)?.cursor("pointer")?.margin_right(px(8))?),
-                        button("Toggle Border").on(event::click, move |_| {
+                        button("Toggle Border").on(events::click, move |_| {
                             active_border.update(|b| *b = !*b)?;
                             Ok(())
                         })
@@ -520,7 +521,7 @@ pub fn Theming<'scope, Ctx>(
 
         div![
             button("🌞 Light Mode")
-                .on(event::click, move |_| {
+                .on(events::click, move |_| {
                     global_settings
                         .theme
                         .set("Light".to_string())
@@ -537,7 +538,7 @@ pub fn Theming<'scope, Ctx>(
                         .border(rx!(ctx; if !*$is_dark { border(px(1), BorderStyleKeyword::Solid, AppTheme::PRIMARY) } else { border(px(1), BorderStyleKeyword::Solid, hex("#d1d5db")) })?)?
                 ),
             button("🌙 Dark Mode")
-                .on(event::click, move |_| {
+                .on(events::click, move |_| {
                     global_settings
                         .theme
                         .set("Dark".to_string())

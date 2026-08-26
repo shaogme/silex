@@ -10,7 +10,10 @@ use silex_persist::{
     PersistExternalSync, PersistWriteMode, PersistenceState, Persistent, WriteDefault,
 };
 use silex_router::{RouterContext, RouterContextProps};
-use silex_view::{AnyView, IndexedListView, MountContext, MountInstance, MountOwnerToken, View};
+use silex_view::elements::AnyView;
+use silex_view::flow::IndexedListView;
+use silex_view::lifecycle::MountOwnerToken;
+use silex_view::mount::{MountContext, MountInstance, View};
 use std::{
     cell::{Cell, RefCell},
     panic::AssertUnwindSafe,
@@ -773,16 +776,15 @@ fn persistent_view_stops_after_row_owner_dispose() {
         let items = scope
             .signal(vec![0_i32])
             .expect("items signal should be created");
-        let list = IndexedListView {
-            each: items,
-            view_fn: Rc::new(move |_, _| {
+        let list = IndexedListView::new(
+            items,
+            Rc::new(move |_, _| {
                 AnyView::new(CapturedPersistent {
                     binding,
                     node: captured_node_for_view.clone(),
                 })
             }),
-            _marker: std::marker::PhantomData,
-        };
+        );
         let (owner, error_handler) = test_owner(scope);
         let _ = mount_view(&list, &owner, &dom, &parent_node, error_handler)
             .expect("persistent list should mount");

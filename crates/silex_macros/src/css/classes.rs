@@ -29,7 +29,7 @@ pub fn classes_impl(input: TokenStream) -> Result<TokenStream> {
     let __view = silex_view();
     let items = Punctuated::<ClassItem, Token![,]>::parse_terminated.parse2(input)?;
     if items.is_empty() {
-        return Ok(quote! { #__view::attribute::AttributeGroup::default() });
+        return Ok(quote! { #__view::attributes::AttributeGroup::default() });
     }
 
     let expanded = items.into_iter().map(|item| {
@@ -38,14 +38,14 @@ pub fn classes_impl(input: TokenStream) -> Result<TokenStream> {
             ClassItem::Conditional(cls, cond) => quote! { (#cls, #cond) },
         };
         quote! {
-            #__view::attribute::ApplyToDom::into_op(
-                #__view::attribute::IntoStorable::into_storable(#val),
-                #__view::attribute::ApplyTarget::Class,
+            #__view::attributes::ApplyToDom::into_op(
+                #__view::attributes::IntoStorable::into_storable(#val),
+                #__view::attributes::ApplyTarget::Class,
             )
         }
     });
 
-    Ok(quote! { #__view::attribute::AttributeGroup(vec![ #(#expanded),* ]) })
+    Ok(quote! { #__view::attributes::AttributeGroup::new(vec![ #(#expanded),* ]) })
 }
 
 #[cfg(test)]

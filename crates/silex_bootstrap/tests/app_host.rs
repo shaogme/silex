@@ -3,7 +3,8 @@
 use silex_bootstrap::{AppHost, AppHostError, BootstrapError, HostState, UnmountOutcome};
 use silex_core::{Runtime, SilexError, SilexErrorKind, SilexResult, ViewError};
 use silex_dom::lifecycle::CleanupSink;
-use silex_view::{Element, MountBuilderContext};
+use silex_view::app::MountBuilderContext;
+use silex_view::elements::Element;
 use std::{cell::Cell, rc::Rc};
 use wasm_bindgen_test::*;
 use web_sys::{Document, Node, window};

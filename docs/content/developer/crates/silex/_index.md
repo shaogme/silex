@@ -67,7 +67,7 @@ UI 组件不通过 `prelude` 的 glob 导出，以免和 flow 中的 `Switch` �
 {{ ("```rust\n" ~ source ~ "\n```") | markdown | safe }}
 
 示例由 `crates/silex/tests/docs_examples.rs` 编译并执行。真正的浏览器挂载还需要
-`silex_bootstrap::AppHost`/`BrowserBootstrap` 或 `silex_view::MountedApp`；native
+`silex_bootstrap::AppHost`/`BrowserBootstrap` 或 `silex_view::app::MountedApp`；native
 示例不能证明浏览器 DOM、CSSOM 或事件行为。
 
 ## 典型调用链与生命周期

@@ -1,7 +1,6 @@
 use silex_view::{
-    AttributeBuilder,
-    attribute::IntoStorable,
-    element::{
+    attributes::{AttributeBuilder, IntoStorable},
+    elements::{
         AnchorTag, FormTag, LabelTag, MediaTag, OpenTag, TableCellTag, TableHeaderTag, Tag,
         TypedElement,
     },

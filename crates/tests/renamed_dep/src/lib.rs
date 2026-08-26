@@ -5,6 +5,25 @@
 
 use my_silex::prelude::*;
 
+my_silex_view::define_tag!(
+    RenamedDirectTag,
+    "div",
+    html,
+    renamed_direct_tag,
+    non_void,
+    []
+);
+
+pub fn direct_view_abi<'scope>() -> my_silex_view::elements::AnyView<'scope> {
+    let _attributes: my_silex_view::attributes::AttributeGroup<'scope> =
+        my_silex_view::group![("data-origin", "renamed-view")];
+    let _children = my_silex_view::chain!("first", "second");
+    my_silex_view::view_match!(true, {
+        true => renamed_direct_tag("content"),
+        false => "fallback",
+    })
+}
+
 router! {
     enum RenamedRoute {
         User { id: u32 } => "/users/:id",

@@ -1,5 +1,5 @@
 use silex_persist::Persistent;
-use silex_view::View;
+use silex_view::mount::View;
 
 fn static_view<'scope>(binding: Persistent<'scope, String>) -> Box<dyn View<'static>> {
     Box::new(binding)

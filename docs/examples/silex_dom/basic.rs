@@ -9,9 +9,9 @@ use silex_dom::diagnostics::DomError;
 #[cfg(target_arch = "wasm32")]
 use silex_dom::lifecycle::CleanupSink;
 #[cfg(target_arch = "wasm32")]
-use silex_view::attribute::GlobalAttributes;
+use silex_view::attributes::GlobalAttributes;
 #[cfg(target_arch = "wasm32")]
-use silex_view::{Element, MountedApp};
+use silex_view::{app::MountedApp, elements::Element};
 
 pub fn run() -> Result<(), Box<dyn Error>> {
     #[cfg(target_arch = "wasm32")]
@@ -39,7 +39,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    let _ = silex_view::Element::with_child("button", "Hello from silex_view");
+    let _ = silex_view::elements::Element::with_child("button", "Hello from silex_view");
 
     Ok(())
 }

@@ -3,6 +3,7 @@ use gloo_timers::future::TimeoutFuture;
 use silex::core::TaskHandle;
 use silex::dom::diagnostics::{DomError, logging::console_log};
 use silex::prelude::*;
+use silex::view::events;
 use std::rc::Rc;
 
 #[component]
@@ -51,13 +52,13 @@ pub fn Counter<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
                     "disabled",
                     count.less_than_or_equals(owner, 0, error_handler)?
                 )
-                .on(event::click, count.updater(|n| *n -= 1)),
+                .on(events::click, count.updater(|n| *n -= 1)),
             strong(count).classes(classes![
                 "counter-val",
                 "positive" => count.greater_than(owner, 0, error_handler)?,
                 "negative" => count.less_than(owner, 0, error_handler)?
             ]),
-            button("+").on(event::click, count.updater(|n| *n += 1)),
+            button("+").on(events::click, count.updater(|n| *n += 1)),
         ]
         .style(
             sty(ctx)
@@ -72,7 +73,7 @@ pub fn Counter<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
             } else {
                 "Start Auto Inc"
             })?)
-            .on(event::click, move |_| {
+            .on(events::click, move |_| {
                 if is_running.get()? {
                     if let Some(handle) = timer.update(Option::take)? {
                         handle.cancel();
@@ -102,7 +103,7 @@ pub fn Counter<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
             span("Set Value: "),
             input()
                 .prop("value", count) // One-way binding from signal to DOM
-                .on(event::input, move |e: DomEvent| {
+                .on(events::input, move |e: DomEvent| {
                     let val_str = e.input_value().unwrap_or_default();
                     if let Ok(n) = val_str.parse::<i32>() {
                         count.set(n)?;
@@ -249,15 +250,15 @@ pub fn SignalGuardDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
         p![strong("账户余额："), strong(balance)],
         p![strong("已提交订单："), strong(order_count)],
         div![
-            button("减少").on(event::click, on_decrease),
+            button("减少").on(events::click, on_decrease),
             strong(quantity),
-            button("增加").on(event::click, on_increase),
+            button("增加").on(events::click, on_increase),
         ]
         .style(sty(ctx).display("flex")?.gap(px(10))?),
         p(status),
         div![
-            button("检查库存").on(event::click, on_stock_check),
-            button("提交订单").on(event::click, on_submit),
+            button("检查库存").on(events::click, on_stock_check),
+            button("提交订单").on(events::click, on_submit),
         ]
         .style(sty(ctx).display("flex")?.gap(px(10))?),
     ]
@@ -335,7 +336,7 @@ pub fn NodeRefDemo<'scope, Ctx>(
             .placeholder("I will be focused by NodeRef")
             .node_ref(input_ref.clone())
             .style(sty(ctx).margin_right(px(10))?.padding("5px")?),
-        button("Focus Input via NodeRef").on(event::click, move |_| {
+        button("Focus Input via NodeRef").on(events::click, move |_| {
             let message = match focus_action.focus(&input_ref) {
                 Ok(()) => "NodeRef focus succeeded".to_string(),
                 Err(error) => focus_status(&error),
@@ -393,7 +394,7 @@ pub fn SvgIconDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
                         .margin_left(px(10))?
                         .cursor("pointer")?
                 )
-                .on(event::click, |_| {
+                .on(events::click, |_| {
                     console_log("Icon Clicked!");
                     Ok(())
                 })
@@ -460,7 +461,7 @@ pub fn EventDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
         ]
         .style(sty(ctx).margin_bottom(px(10))?.font_family("monospace")?),
         button("Log & Update (Standard)")
-            .on(event::click, on_click)
+            .on(events::click, on_click)
             .style(sty(ctx).margin_right(px(10))?),
         div![].style(
             sty(ctx)
@@ -469,7 +470,7 @@ pub fn EventDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
                 .margin("15px 0")?
         ),
         p("2. Non-Copy types: Clone manually inside the closure."),
-        button("Consume Payload").on(event::click, on_click_inner),
+        button("Consume Payload").on(events::click, on_click_inner),
         ul(For(ctx, logs, |l| l.clone())
             .children(move |l, _idx| li(l).style(log_item_style.clone()))
             .build())
@@ -506,7 +507,7 @@ pub fn BasicsPage<'scope, Ctx>(
             input().bind_value(name_draft),
             button("Submit")
                 .attr("disabled", name_draft.equals(owner, "", error_handler)?,)
-                .on(event::click, move |_| {
+                .on(events::click, move |_| {
                     name_signal.set(name_draft.get()?)?;
                     Ok(())
                 })

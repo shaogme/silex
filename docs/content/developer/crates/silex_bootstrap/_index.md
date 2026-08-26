@@ -22,7 +22,7 @@ JavaScript owner。
 应用组件 / silex_html
           │ MountContext builder
           ▼
-      silex_view::MountedApp
+      silex_view::app::MountedApp
           │ 应用级 boundary、owner、rollback
           ▼
   silex_bootstrap::AppHost

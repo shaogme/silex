@@ -2,8 +2,9 @@ use silex_core::ErrorHandlerToken;
 use silex_core::reactivity::ReactiveSource;
 use silex_core::traits::{ForLoopSource, RxRead, RxReadRef};
 use silex_macros::component;
-use silex_view::prelude::*;
-use silex_view::{AnyView, RenderOnlyKeyedListView, RowUpdater, StatefulKeyedListView};
+use silex_view::elements::AnyView;
+use silex_view::flow::{RenderOnlyKeyedListView, RowUpdater, StatefulKeyedListView};
+use silex_view::mount::View;
 use std::hash::Hash;
 use std::marker::PhantomData;
 use std::rc::Rc;
@@ -89,13 +90,7 @@ where
 {
     let view_fn = Rc::new(move |item: Item, index: usize| children.render(item, index));
 
-    RenderOnlyKeyedListView {
-        each,
-        key_fn: Rc::new(key),
-        view_fn,
-        error_handler: row_error_handler,
-        _marker: std::marker::PhantomData,
-    }
+    RenderOnlyKeyedListView::new(each, Rc::new(key), view_fn, row_error_handler)
 }
 
 /// 需要显式绑定 `RowUpdater` 的 stateful keyed `For` 组件。
@@ -138,11 +133,5 @@ where
         },
     );
 
-    StatefulKeyedListView {
-        each,
-        key_fn: Rc::new(key),
-        view_fn,
-        error_handler: row_error_handler,
-        _marker: std::marker::PhantomData,
-    }
+    StatefulKeyedListView::new(each, Rc::new(key), view_fn, row_error_handler)
 }

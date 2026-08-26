@@ -10,7 +10,7 @@ use silex_dom::{
     },
     runtime::{DomContext, HostResource},
 };
-use silex_view::MountBuilderContext;
+use silex_view::app::MountBuilderContext;
 use std::{
     cell::RefCell,
     rc::{Rc, Weak},

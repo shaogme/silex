@@ -7,7 +7,7 @@ weight = 30
 # 属性 facade 与 DOM 目标
 
 `silex_html::attributes` 只提供面向 HTML 的命名方法。它们通过
-`silex_view::attribute::AttributeBuilder::attr` 创建 `AttrOp`，在标签真正
+`silex_view::attributes::AttributeBuilder::attr` 创建 `AttrOp`，在标签真正
 mount 时才应用到 DOM。属性的生命周期、响应式 effect、事件资源和清理由
 `silex_dom` 的 owner 管理。
 
@@ -59,7 +59,7 @@ fn method(self, value: impl IntoStorable<'scope>) -> Self
 命名 facade 统一使用 attribute 目标：
 
 ```rust
-use silex_view::attribute::{AttributeBuilder, GlobalAttributes};
+use silex_view::attributes::{AttributeBuilder, GlobalAttributes};
 use silex_html::{FormAttributes, input};
 
 let field = input()
@@ -112,10 +112,10 @@ class/style 的合并也由 `silex_dom` 完成：动态 cleanup 只撤销当前 
 ## 全局属性、ARIA 和事件
 
 以下能力不是 `silex_html::attributes.rs` 声明的，而是从
-`silex_view::attribute` 导入：
+`silex_view::attributes` 导入：
 
 ```rust
-use silex_view::attribute::{
+use silex_view::attributes::{
     AriaAttributes,
     AttributeBuilder,
     GlobalAttributes,
@@ -132,7 +132,7 @@ let view = silex_html::button("Save")
 `on_input`/`on_change` 则先读取 event target 的字符串值。callback 返回的
 `SilexResult` 错误交给 mount error handler，listener 和 JS closure 绑定到
 owner，owner 关闭后不会继续调用应用 callback。跨元素复用多组属性时，可用
-`silex_view::attribute::group` 或 `AttributeBuilder::apply`，不要复制一套新的
+`silex_view::attributes::group` 或 `AttributeBuilder::apply`，不要复制一套新的
 `IntoStorable` 转换逻辑。
 
 ## 当前能力边界与迁移

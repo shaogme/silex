@@ -5,7 +5,8 @@ use silex_bootstrap::{
 };
 use silex_core::{Runtime, SilexError, SilexErrorKind, SilexResult};
 use silex_dom::lifecycle::CleanupSink;
-use silex_view::{Element, MountBuilderContext};
+use silex_view::app::MountBuilderContext;
+use silex_view::elements::Element;
 use std::rc::Rc;
 use wasm_bindgen_test::*;
 use web_sys::{Document, Element as DomElement, Node, window};

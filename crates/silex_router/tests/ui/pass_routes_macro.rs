@@ -3,7 +3,7 @@ use silex_router::{
     RouteMatcher,
     macros::router,
 };
-use silex_view::AnyView;
+use silex_view::elements::AnyView;
 
 router! {
     enum AppRoute {

@@ -6,7 +6,8 @@ use crate::{
     },
 };
 pub use silex_core::{RoutePatternError, RoutePatternErrorKind};
-use silex_view::{AnyView, View};
+use silex_view::elements::AnyView;
+use silex_view::mount::View;
 use std::{
     collections::{BTreeMap, HashSet},
     error::Error,
@@ -603,7 +604,7 @@ fn normalize_nest_prefix(prefix: &str) -> Result<String, RoutePatternError> {
 mod tests {
     use super::{RouteEntry, RouteMatcher, RoutePatternError, RoutePatternErrorKind, RouteTable};
     use crate::path::PathTail;
-    use silex_view::AnyView;
+    use silex_view::elements::AnyView;
 
     #[test]
     fn matcher_uses_static_then_param_then_wildcard_priority() {
