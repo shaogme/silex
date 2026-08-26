@@ -1,6 +1,19 @@
 use super::binding::ReactiveBindingPlan;
 use silex_core::Rx;
 use std::{borrow::Cow, fmt};
+
+pub(crate) type CombinedClassesParts<'scope> = (
+    Vec<Cow<'scope, str>>,
+    Vec<(Cow<'scope, str>, ReactiveBindingPlan<'scope>)>,
+    Vec<ReactiveBindingPlan<'scope>>,
+);
+
+pub(crate) type CombinedStylesParts<'scope> = (
+    Vec<(Cow<'scope, str>, Cow<'scope, str>)>,
+    Vec<ReactiveBindingPlan<'scope>>,
+    Vec<ReactiveBindingPlan<'scope>>,
+);
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ApplyTarget {
     Attr(Cow<'static, str>),
@@ -191,13 +204,7 @@ impl<'scope> CombinedClasses<'scope> {
         }
     }
 
-    pub(crate) fn into_parts(
-        self,
-    ) -> (
-        Vec<Cow<'scope, str>>,
-        Vec<(Cow<'scope, str>, ReactiveBindingPlan<'scope>)>,
-        Vec<ReactiveBindingPlan<'scope>>,
-    ) {
+    pub(crate) fn into_parts(self) -> CombinedClassesParts<'scope> {
         (self.statics, self.toggles, self.reactives)
     }
 }
@@ -240,13 +247,7 @@ impl<'scope> CombinedStyles<'scope> {
         }
     }
 
-    pub(crate) fn into_parts(
-        self,
-    ) -> (
-        Vec<(Cow<'scope, str>, Cow<'scope, str>)>,
-        Vec<ReactiveBindingPlan<'scope>>,
-        Vec<ReactiveBindingPlan<'scope>>,
-    ) {
+    pub(crate) fn into_parts(self) -> CombinedStylesParts<'scope> {
         (self.statics, self.properties, self.sheets)
     }
 }

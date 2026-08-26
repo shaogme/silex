@@ -401,6 +401,55 @@ fn dynamic_view_and_stable_branch_follow_signal_changes() {
 }
 
 #[test]
+fn stable_branch_preserves_state_when_key_evaluation_fails() {
+    let dom = SsrDom::new();
+    let mut mounted = app(&dom);
+    let errors = Rc::new(Cell::new(0_u32));
+    let errors_for_assertion = errors.clone();
+
+    mounted
+        .mount({
+            let errors = errors.clone();
+            move |context| {
+                let handler = context
+                    .access()
+                    .error_handler(move |_| errors.set(errors.get() + 1))
+                    .expect("error handler");
+                let fail = context.access().signal(false).expect("failure signal");
+                let key = context.access().signal(1_usize).expect("key signal");
+                context.mount_unit(
+                    StableBranch::new(
+                        move || {
+                            if fail.get()? {
+                                return Err(SilexError::fatal(SilexErrorKind::Framework(
+                                    "intentional key failure".into(),
+                                )));
+                            }
+                            key.get().map(|value| BranchEvaluation::new(value, value))
+                        },
+                        |evaluation, _| {
+                            let (key, value) = evaluation.into_parts();
+                            AnyView::from(Element::with_child("output", format!("{key}:{value}")))
+                        },
+                    ),
+                    handler.view(),
+                )?;
+                fail.set(true)?;
+                fail.set(false)?;
+                key.set(2)
+            }
+        })
+        .expect("stable branch should mount");
+
+    assert!(errors_for_assertion.get() > 0);
+    let html = dom.serialize(Default::default()).expect("serialize");
+    assert!(
+        html.contains("<output>2:2</output>"),
+        "unexpected HTML: {html}"
+    );
+}
+
+#[test]
 fn dynamic_renderer_is_a_view_with_a_kernel_context_callback() {
     let dom = SsrDom::new();
     let mut mounted = app(&dom);

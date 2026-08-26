@@ -145,8 +145,8 @@ where
     if let Err(error) = local_owner.effect(
         EffectPhase::Normal,
         Box::new(move || {
-            let mut state = effect_state.take()?;
             let key = key_fn()?;
+            let mut state = effect_state.take()?;
             if state.key.as_ref().is_some_and(|current| current == &key) {
                 if update_same_key && let Some(row) = state.row.as_mut() {
                     row.update(key.clone(), 0)?;
