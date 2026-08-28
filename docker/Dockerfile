@@ -4,8 +4,7 @@ FROM ${BASE_IMAGE}
 WORKDIR /root/workspace
 
 # Copy custom entrypoint for automatic mise environment loading
-COPY docker/entrypoint.sh /usr/local/bin/mise-entrypoint.sh
-RUN chmod +x /usr/local/bin/mise-entrypoint.sh
+COPY --chmod=755 docker/entrypoint.sh /usr/local/bin/mise-entrypoint.sh
 
 # Enable non-interactive auto-confirm for mise
 ENV MISE_YES=1
