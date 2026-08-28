@@ -51,6 +51,8 @@ if [ $CONFIG_FOUND -eq 0 ]; then
     done
 fi
 
+export PNPM_HOME="${PNPM_HOME:-/root/.local/share/pnpm}"
+export PATH="$PNPM_HOME/bin:$PNPM_HOME:/root/.cargo/bin:/root/.nix-profile/bin:$PATH"
 export MISE_YES=1
 export FONTCONFIG_PATH="${FONTCONFIG_PATH:-/root/.nix-profile/etc/fonts}"
 export FONTCONFIG_FILE="${FONTCONFIG_FILE:-/root/.nix-profile/etc/fonts/fonts.conf}"

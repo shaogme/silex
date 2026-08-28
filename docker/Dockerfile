@@ -22,8 +22,9 @@ RUN --mount=type=cache,target=/root/.cache/nix \
         nixpkgs.geckodriver \
         nixpkgs.zola
 
-# Set the PATH and Headless / Fontconfig environment variables
-ENV PATH=/root/.nix-profile/bin:$PATH \
+# Set the PNPM, PATH and Headless / Fontconfig environment variables
+ENV PNPM_HOME=/root/.local/share/pnpm \
+    PATH=/root/.local/share/pnpm/bin:/root/.local/share/pnpm:/root/.cargo/bin:/root/.nix-profile/bin:$PATH \
     FONTCONFIG_PATH=/root/.nix-profile/etc/fonts \
     FONTCONFIG_FILE=/root/.nix-profile/etc/fonts/fonts.conf \
     MOZ_HEADLESS=1 \

@@ -25,8 +25,7 @@ services:
       - rust-target:/root/workspace/target
       # Persist Cargo dependencies, crate index, and git checkouts
       - cargo-cache:/root/.cargo
-      # Persist mise tools and cache
-      - mise-data:/root/.local/share/mise
+      # Persist mise cache (downloads)
       - mise-cache:/root/.cache/mise
       # Persist codex configuration
       - codex-config:/root/.codex
@@ -39,14 +38,11 @@ services:
     <<: *app-base
     container_name: silex-standalone
     volumes:
-      # Mount host source code
-      - .:/root/workspace
       # Isolate Rust build artifacts inside a dedicated named Docker volume (high-performance Linux ext4)
       - rust-target:/root/workspace/target
       # Persist Cargo dependencies, crate index, and git checkouts
       - cargo-cache:/root/.cargo
-      # Persist mise tools and cache
-      - mise-data:/root/.local/share/mise
+      # Persist mise cache (downloads)
       - mise-cache:/root/.cache/mise
       # Persist codex configuration
       - codex-config:/root/.codex
@@ -59,7 +55,6 @@ services:
 volumes:
   rust-target:
   cargo-cache:
-  mise-data:
   mise-cache:
   codex-config:
   gemini-config:
