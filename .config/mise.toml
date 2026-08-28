@@ -2,7 +2,16 @@
 minimum_release_age = "1h"
 
 [tools]
-node = { version = "latest", postinstall = "corepack enable" }
+node = { version = "latest" }
+pnpm = {
+    version = "latest",
+    depends = ["node"],
+}
+yarn = {
+    version = "latest",
+    depends = ["node"],
+}
+
 python = "latest"
 rust = [
     {
