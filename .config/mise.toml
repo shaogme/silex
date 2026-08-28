@@ -1,6 +1,3 @@
-[tool_config]
-locked = true
-
 [settings]
 minimum_release_age = "1h"
 
